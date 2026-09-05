@@ -13,7 +13,10 @@ SEED = 4242          # pin one dataset so the suite is deterministic
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
+    import time
+
     import app as app_module
+    import auth
     import workspace as workspace_module
 
     # keep the suite from writing into the real per-session audit logs
@@ -25,6 +28,15 @@ def client(tmp_path_factory):
     app_module._seed_from_token = lambda token: SEED
 
     with TestClient(app_module.app) as test_client:
+        # sign in for real rather than disabling the gate, so these tests keep
+        # exercising the authenticated path the console actually uses
+        username = f"api-suite-{int(time.time() * 1000) % 1_000_000}"
+        record = auth.create_user(username, "suite-password")
+        challenge = test_client.post("/api/auth/login", json={
+            "username": username, "password": "suite-password"}).json()["challenge"]
+        code = auth.totp_at(record["totp_secret"], int(time.time() // 30))
+        assert test_client.post("/api/auth/verify", json={
+            "challenge": challenge, "code": code}).status_code == 200
         yield test_client
 
 

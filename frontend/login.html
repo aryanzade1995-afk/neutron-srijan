@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MuleTrace — Sign in</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23263331'/><g fill='none' stroke='%239bc8bd' stroke-width='2.4' stroke-linecap='round'><circle cx='8' cy='23' r='2.6'/><path d='M10.4 21.4 14.6 17.2'/><path d='M18.2 13.8 21.4 10.6'/></g><circle cx='16.4' cy='15.4' r='1.9' fill='%239bc8bd'/><circle cx='24' cy='9' r='3.4' fill='%239bc8bd'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; position: relative; z-index: 1; }
+  .auth-card {
+    width: 100%; max-width: 420px;
+    background: rgba(24, 32, 31, .82);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .6);
+    padding: 30px 30px 26px;
+    backdrop-filter: blur(10px);
+  }
+  .auth-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 24px; }
+  .auth-brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .auth-brand small { display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .11em; color: var(--muted-2); }
+  .auth-step { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--mint); margin-bottom: 8px; }
+  .auth-card h2 { margin: 0 0 6px; font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+  .auth-card p.lede { margin: 0 0 20px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+  .auth-field { margin-bottom: 13px; }
+  .auth-field label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .auth-field input {
+    width: 100%; padding: 11px 14px;
+    background: rgba(232, 238, 236, .04);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    color: var(--text); font: inherit; font-size: 13px; outline: none;
+  }
+  .auth-field input:focus { border-color: rgba(155, 200, 189, .45); background: rgba(232, 238, 236, .06); }
+  .auth-field input.code { font-size: 22px; letter-spacing: .38em; text-align: center; font-variant-numeric: tabular-nums; padding: 12px 14px; }
+  .auth-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .auth-actions .btn { flex: 1; justify-content: center; padding: 11px 18px; }
+  .auth-error {
+    margin-top: 14px; padding: 10px 13px;
+    border-radius: var(--r-sm);
+    background: rgba(191, 95, 102, .1); border: 1px solid rgba(191, 95, 102, .3);
+    color: #d8a3a7; font-size: 12px; line-height: 1.5;
+  }
+  .auth-note {
+    margin-top: 18px; padding: 12px 14px;
+    border-radius: var(--r-sm);
+    background: rgba(201, 154, 78, .06); border: 1px solid rgba(201, 154, 78, .22);
+    color: #dcc79c; font-size: 11.5px; line-height: 1.6;
+  }
+  .enrol { text-align: center; margin: 6px 0 18px; }
+  .enrol .qr { display: inline-block; padding: 12px; background: #e8eeec; border-radius: var(--r-sm); }
+  .enrol .secret {
+    margin-top: 14px; padding: 10px 12px;
+    background: rgba(232, 238, 236, .05); border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    font-size: 13px; letter-spacing: .1em; word-break: break-all; color: var(--mint);
+  }
+  .enrol .secret-label { font-size: 10.5px; color: var(--muted-2); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 5px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="6" cy="24" r="2.6"/>
+          <path d="M8.6 22.2 13.4 17.4"/>
+          <circle cx="15.5" cy="15.5" r="1.9" fill="currentColor" stroke="none"/>
+          <path d="M17.2 13.8 21.9 9.1"/>
+          <circle cx="25" cy="7" r="3.2" fill="currentColor" stroke="none"/>
+          <circle cx="25" cy="7" r="5.8" stroke-width="1.3" opacity=".45"/>
+        </svg>
+      </span>
+      <div><h1>MuleTrace</h1><small>INVESTIGATION CONSOLE</small></div>
+    </div>
+
+    <!-- step 1 -->
+    <form id="step-credentials">
+      <div class="auth-step">Step 1 of 2 — Credentials</div>
+      <h2>Sign in</h2>
+      <p class="lede">This console carries case data. Access needs a password and a
+         one-time code from your authenticator.</p>
+      <div class="auth-field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="auth-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="auth-actions">
+        <button class="btn btn-primary" type="submit" id="btn-credentials">Continue</button>
+      </div>
+    </form>
+
+    <!-- step 2 -->
+    <form id="step-code" class="hidden">
+      <div class="auth-step">Step 2 of 2 — Verification</div>
+      <h2 id="code-heading">Enter your code</h2>
+      <p class="lede" id="code-lede">Open your authenticator app and enter the current
+         six-digit code for MuleTrace.</p>
+
+      <div id="enrol" class="enrol hidden">
+        <div class="qr" id="qr"></div>
+        <div class="secret-label" style="margin-top:14px">Or enter this key manually</div>
+        <div class="secret" id="secret"></div>
+      </div>
+
+      <div class="auth-field">
+        <label for="code">Six-digit code</label>
+        <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="6" pattern="[0-9]{6}" placeholder="000000" required>
+      </div>
+      <div class="auth-actions">
+        <button class="btn" type="button" id="btn-back">Back</button>
+        <button class="btn btn-primary" type="submit" id="btn-verify">Verify</button>
+      </div>
+    </form>
+
+    <div id="error" class="auth-error hidden"></div>
+    <div id="store-note" class="auth-note hidden"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const next = new URLSearchParams(location.search).get('next') || '/console';
+let challenge = null;
+
+function fail(message) {
+  const box = $('error');
+  box.textContent = message;
+  box.classList.remove('hidden');
+}
+function clearError() { $('error').classList.add('hidden'); }
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `request failed (${res.status})`);
+  return data;
+}
+
+$('step-credentials').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  const btn = $('btn-credentials');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    const r = await api('/api/auth/login', {
+      username: $('username').value.trim(),
+      password: $('password').value,
+    });
+    challenge = r.challenge;
+
+    if (!r.enrolled && r.provisioning_uri) {
+      // first sign-in: enrol the authenticator before the code is asked for
+      $('enrol').classList.remove('hidden');
+      $('code-heading').textContent = 'Set up your authenticator';
+      $('code-lede').textContent =
+        'Scan this with Google Authenticator, Authy or 1Password, then enter the '
+        + 'code it shows. This key is displayed once.';
+      $('secret').textContent = r.totp_secret;
+      $('qr').innerHTML = '';
+      if (window.QRCode) {
+        new QRCode($('qr'), { text: r.provisioning_uri, width: 168, height: 168,
+                              colorDark: '#18201f', colorLight: '#e8eeec' });
+      }
+    }
+    $('step-credentials').classList.add('hidden');
+    $('step-code').classList.remove('hidden');
+    $('code').focus();
+  } catch (err) {
+    fail(err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Continue';
+  }
+});
+
+$('step-code').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  const btn = $('btn-verify');
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  try {
+    await api('/api/auth/verify', { challenge, code: $('code').value });
+    location.href = next;
+  } catch (err) {
+    fail(err.message);
+    $('code').value = '';
+    $('code').focus();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
+  }
+});
+
+$('btn-back').addEventListener('click', () => {
+  clearError();
+  $('step-code').classList.add('hidden');
+  $('step-credentials').classList.remove('hidden');
+  $('password').value = '';
+  $('username').focus();
+});
+
+$('code').addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+});
+
+// say plainly when session state is not durable
+fetch('/api/auth/status').then(r => r.json()).then(s => {
+  if (s.authenticated && s.user) { location.href = next; return; }
+  if (s.store && s.store.backend !== 'redis') {
+    const note = $('store-note');
+    note.innerHTML = '<b>Session store: in-process.</b> Redis is not reachable, so '
+      + 'sign-ins are held in memory and will not survive a server restart.';
+    note.classList.remove('hidden');
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>

@@ -12,12 +12,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+import auth
 import evaluate
 from feedback import Verdict
 from graph_engine import WalkParams
+from store import STORE
 from workspace import Workspace, WorkspacePool
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,13 +67,129 @@ def _new_session(response: Response) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    seeded = auth.ensure_demo_user()
+    if seeded:
+        username, password, secret = seeded
+        print("\n" + "=" * 72)
+        print("  MuleTrace — an investigator account was created on first boot")
+        print(f"  username : {username}")
+        print(f"  password : {password}")
+        print(f"  TOTP key : {secret}")
+        print("  Enrol this key in an authenticator app, or open /login and scan the QR.")
+        print("  These credentials are printed once. Set MULETRACE_AUTH=off to disable")
+        print("  authentication entirely for a rehearsal.")
+        print("=" * 72 + "\n")
     yield
     POOL._items.clear()
 
 
-app = FastAPI(title="MuleTrace", version="0.3.0",
+app = FastAPI(title="MuleTrace", version="0.4.0",
               description="Mule-account transaction chain detection for UPI/NPCI",
               lifespan=lifespan)
+
+
+# ---------- authentication gate ----------
+
+OPEN_PATHS = ("/login", "/assets", "/api/auth", "/api/health", "/favicon.ico",
+              "/docs", "/openapi.json", "/redoc")
+
+
+@app.middleware("http")
+async def require_authentication(request: Request, call_next):
+    """One gate in front of everything that exposes case data.
+
+    The console shows victim VPAs, account ages and freeze recommendations, so
+    the API is closed by default rather than relying on each route to remember.
+    """
+    path = request.url.path
+    if not auth.AUTH_ENABLED or path.startswith(OPEN_PATHS):
+        return await call_next(request)
+
+    user = auth.session_user(request.cookies.get(auth.SESSION_COOKIE))
+    if user:
+        request.state.user = user
+        return await call_next(request)
+
+    if path.startswith("/api/"):
+        return JSONResponse({"detail": "authentication required"}, status_code=401)
+    return RedirectResponse(f"/login?next={path}", status_code=302)
+
+
+# ---------- auth endpoints ----------
+
+@app.get("/api/auth/status")
+def auth_status(request: Request) -> dict:
+    user = auth.session_user(request.cookies.get(auth.SESSION_COOKIE))
+    return {
+        "auth_enabled": auth.AUTH_ENABLED,
+        "authenticated": bool(user) or not auth.AUTH_ENABLED,
+        "user": user,
+        "store": STORE.info(),
+    }
+
+
+@app.post("/api/auth/login")
+def login(username: str = Body(..., embed=True),
+          password: str = Body(..., embed=True)) -> dict:
+    """First factor. Never issues a session on its own."""
+    if auth.is_locked(username):
+        raise HTTPException(429, "too many failed attempts — try again shortly")
+
+    user = auth.get_user(username)
+    # constant-ish work whether or not the user exists, so timing does not
+    # distinguish a wrong username from a wrong password
+    ok = bool(user) and auth.check_password(password, user["password_hash"], user["salt"])
+    if not ok:
+        attempts = auth.record_failure(username)
+        raise HTTPException(401, f"invalid credentials ({auth.MAX_ATTEMPTS - attempts} left)")
+
+    challenge = auth.start_challenge(username)
+    enrolled = user["mfa_enrolled"] == "1"
+    payload = {
+        "mfa_required": True,
+        "challenge": challenge,
+        "enrolled": enrolled,
+        "expires_in": auth.CHALLENGE_TTL,
+    }
+    if not enrolled:
+        # shown once, during enrolment only
+        payload["totp_secret"] = user["totp_secret"]
+        payload["provisioning_uri"] = auth.provisioning_uri(username, user["totp_secret"])
+    return payload
+
+
+@app.post("/api/auth/verify")
+def verify(response: Response,
+           challenge: str = Body(..., embed=True),
+           code: str = Body(..., embed=True)) -> dict:
+    """Second factor. Only this issues a session."""
+    username = auth.resolve_challenge(challenge)
+    if not username:
+        raise HTTPException(401, "challenge expired — sign in again")
+
+    user = auth.get_user(username)
+    if not user or not auth.verify_totp(user["totp_secret"], code):
+        attempts = auth.record_failure(username)
+        if attempts >= auth.MAX_ATTEMPTS:
+            auth.consume_challenge(challenge)
+            raise HTTPException(429, "too many failed attempts — try again shortly")
+        raise HTTPException(401, "invalid verification code")
+
+    auth.consume_challenge(challenge)
+    auth.clear_failures(username)
+    auth.mark_enrolled(username)
+
+    token = auth.start_session(username)
+    response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_TTL,
+                        httponly=True, samesite="lax")
+    return {"authenticated": True, "user": username, "role": user.get("role")}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response) -> dict:
+    auth.end_session(request.cookies.get(auth.SESSION_COOKIE))
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"authenticated": False}
 
 
 def _params(min_forward_pct: float, max_gap_hours: float, max_hops: int) -> WalkParams:
@@ -128,6 +246,8 @@ def health(request: Request, response: Response) -> dict:
         "accounts": int(len(ws.graph.accounts)),
         "chains": len(ws.chains),
         "pool": POOL.stats(),
+        "store": STORE.info(),
+        "auth_enabled": auth.AUTH_ENABLED,
     }
 
 
@@ -174,6 +294,7 @@ def chains(request: Request, response: Response, limit: int = 25,
 @app.post("/api/rescan")
 def trigger_rescan(request: Request, response: Response) -> dict:
     ws = resolve_workspace(request, response)
+    ws.invalidate_traces()
     return {"chains": len(ws.rescan(_decorate)), "dataset": ws.label, "seed": ws.seed}
 
 
@@ -213,12 +334,23 @@ def trace(txn_id: str, request: Request, response: Response,
           max_gap_hours: float = Query(48.0, gt=0, le=720),
           max_hops: int = Query(10, ge=1, le=25)) -> dict:
     ws = resolve_workspace(request, response)
+    params_key = f"{min_forward_pct:.2f}:{max_gap_hours:g}:{max_hops}"
+
+    cached = ws.cached_trace(txn_id, params_key)
+    if cached is not None:
+        # the verdict can have moved since the walk was cached
+        recorded = ws.feedback.for_chain(txn_id)
+        cached["review"] = recorded.as_dict() if recorded else None
+        return cached
+
     try:
         walk = ws.graph.chain_walk(txn_id, _params(min_forward_pct, max_gap_hours, max_hops))
     except KeyError:
         raise HTTPException(404, f"transaction {txn_id} not found")
     walk["risk"] = ws.graph.score_chain(walk, ws.model.score)
-    return _decorate(ws, walk)
+    payload = _decorate(ws, walk)
+    ws.cache_trace(txn_id, params_key, payload)
+    return payload
 
 
 @app.get("/api/risk-score/{account_id}")
@@ -253,7 +385,8 @@ def risk_score(account_id: str, request: Request, response: Response) -> dict:
 def watchlist(request: Request, response: Response,
               limit: int = 20, min_score: float = 0.5) -> dict:
     ws = resolve_workspace(request, response)
-    return {"accounts": ws.model.ranked(limit=limit, min_score=min_score)}
+    return {"accounts": ws.model.ranked(limit=limit, min_score=min_score),
+            "ranked_in_store": ws.top_mule_accounts(limit)}
 
 
 @app.get("/api/complaints")
@@ -368,6 +501,10 @@ if FRONTEND.exists():
     @app.get("/")
     def index(request: Request) -> FileResponse:
         return _serve_page(FRONTEND / "index.html", request)
+
+    @app.get("/login")
+    def login_page(request: Request) -> FileResponse:
+        return _serve_page(FRONTEND / "login.html", request)
 
     @app.get("/console")
     def console(request: Request) -> FileResponse:

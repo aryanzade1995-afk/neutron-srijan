@@ -10,8 +10,12 @@ a small LRU cache rather than pre-baked.
 """
 from __future__ import annotations
 
+import io
+import json
 import random
+import time
 import threading
+import zlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,9 +26,16 @@ from feedback import FeedbackStore
 from generate_data import Generator
 from graph_engine import TransactionGraph, WalkParams
 from risk_model import RiskModel, build_features
+from store import STORE, keys_for
 
 MAX_WORKSPACES = 12
 FEEDBACK_DIR = Path(__file__).resolve().parent.parent / "data" / "feedback"
+
+# Cached datasets outlive a session so a revisited seed is not rebuilt; patterns
+# and traces expire sooner because they follow the current scan.
+DATASET_TTL = 60 * 60 * 24
+PATTERN_TTL = 60 * 60 * 6
+TRACE_TTL = 60 * 30
 
 
 def dataset_params(seed: int) -> dict:
@@ -69,7 +80,64 @@ class Workspace:
                                  risk_lookup=self.model.score)
         self.chains = [decorate(self, c) for c in chains]
         self.evaluation = None
+        self.publish_patterns()
         return self.chains
+
+    def publish_patterns(self) -> None:
+        """Push the detection output into the store.
+
+        Ranked chains go into a sorted set and per-account mule scores into a
+        hash, so 'worst chains right now' and 'score this account' are one
+        command each instead of a rescan. The scan and the classifier stay
+        where they are - this publishes what they found.
+        """
+        k = keys_for(self.seed)
+        STORE.delete(k["chains"], k["accounts"], k["mule"])
+
+        if self.chains:
+            STORE.zadd(k["chains"], {c["entry_txn_id"]: float(c["risk"]["score"])
+                                     for c in self.chains})
+            for chain in self.chains:
+                STORE.set(k["chain"] + chain["entry_txn_id"],
+                          json.dumps(chain).encode(), ttl=PATTERN_TTL)
+
+        if self.model.scores is not None:
+            scores = self.model.scores
+            STORE.hset(k["mule"], {a: f"{s:.6f}".encode() for a, s in scores.items()})
+            STORE.zadd(k["accounts"], {a: float(s) for a, s in scores.items()})
+
+        STORE.hset(k["meta"], {
+            "seed": str(self.seed).encode(),
+            "transactions": str(len(self.graph.txns)).encode(),
+            "accounts": str(len(self.graph.accounts)).encode(),
+            "chains": str(len(self.chains)).encode(),
+            "published_at": str(int(time.time())).encode(),
+        })
+
+    # ---- pattern lookups served straight from the store ----
+
+    def ranked_chains(self, limit: int = 25) -> list[tuple[str, float]]:
+        return STORE.zrevrange(keys_for(self.seed)["chains"], 0, limit - 1)
+
+    def mule_score(self, account: str) -> float | None:
+        raw = STORE.hget(keys_for(self.seed)["mule"], account)
+        return float(raw) if raw else None
+
+    def top_mule_accounts(self, limit: int = 20) -> list[tuple[str, float]]:
+        return STORE.zrevrange(keys_for(self.seed)["accounts"], 0, limit - 1)
+
+    def cached_trace(self, txn_id: str, params_key: str) -> dict | None:
+        raw = STORE.get(keys_for(self.seed)["trace"] + f"{txn_id}:{params_key}")
+        return json.loads(raw) if raw else None
+
+    def cache_trace(self, txn_id: str, params_key: str, payload: dict) -> None:
+        STORE.set(keys_for(self.seed)["trace"] + f"{txn_id}:{params_key}",
+                  json.dumps(payload).encode(), ttl=TRACE_TTL)
+
+    def invalidate_traces(self) -> None:
+        keys = STORE.scan(keys_for(self.seed)["trace"] + "*")
+        if keys:
+            STORE.delete(*keys)
 
     def visible_chains(self, band: str | None = None,
                        include_dismissed: bool = False) -> list:
@@ -84,13 +152,56 @@ class Workspace:
         return items
 
 
-def build_workspace(seed: int) -> Workspace:
+def _serialise(frames: tuple[pd.DataFrame, ...]) -> bytes:
+    buffer = io.BytesIO()
+    for frame in frames:
+        payload = frame.to_json(orient="split").encode()
+        buffer.write(len(payload).to_bytes(4, "big"))
+        buffer.write(payload)
+    return zlib.compress(buffer.getvalue(), 6)
+
+
+def _deserialise(blob: bytes, count: int) -> list[pd.DataFrame]:
+    buffer = io.BytesIO(zlib.decompress(blob))
+    frames = []
+    for _ in range(count):
+        size = int.from_bytes(buffer.read(4), "big")
+        frames.append(pd.read_json(
+            io.StringIO(buffer.read(size).decode()), orient="split",
+            # left on, read_json turns the timestamp column into Timestamps and a
+            # cached dataset stops matching a freshly generated one - the engine
+            # keeps timestamps as ISO strings and parses them itself
+            convert_dates=False, convert_axes=False))
+    return frames
+
+
+def load_dataset(seed: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """Generated once, then served from the store.
+
+    Regeneration is deterministic so caching changes nothing about what a seed
+    produces - it just removes the work when a dataset is revisited.
+    """
     params = dataset_params(seed)
+    key = keys_for(seed)["dataset"]
+
+    blob = STORE.get(key)
+    if blob:
+        try:
+            txns, accounts, truth = _deserialise(blob, 3)
+            return txns, accounts, truth, params
+        except Exception:
+            STORE.delete(key)          # unreadable cache entry must not be fatal
+
     generator = Generator(seed=seed)
     txns, accounts, truth = generator.run(
         params["n_normal"], params["n_merchants"], params["n_txns"],
         params["n_chains"], params["n_forwarders"])
+    STORE.set(key, _serialise((txns, accounts, truth)), ttl=DATASET_TTL)
+    return txns, accounts, truth, params
 
+
+def build_workspace(seed: int) -> Workspace:
+    txns, accounts, truth, params = load_dataset(seed)
     graph = TransactionGraph(txns, accounts)
     features = build_features(graph)
     model = RiskModel()
