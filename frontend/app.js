@@ -195,7 +195,7 @@ const NODE_STYLE = {
   cashout: { bg: 'rgba(99,115,111,.22)', border: '#63736f', size: 24 },
 };
 
-function renderGraph(t) {
+function graphData(t) {
   const nodes = t.nodes.map((n, i) => {
     const s = NODE_STYLE[n.role] || NODE_STYLE.mule;
     const tag = n.role === 'victim' ? 'VICTIM'
@@ -226,22 +226,30 @@ function renderGraph(t) {
     smooth: { type: 'curvedCW', roundness: 0.16 },
   }));
 
-  const container = $('graph');
+  return { nodes, edges };
+}
+
+function renderGraph(t) {
   if (state.network) state.network.destroy();
-  state.network = new vis.Network(container, { nodes, edges }, {
+  state.network = mountGraph($('graph'), graphData(t), { onNodeClick: showAccount });
+}
+
+/* Shared mount so the money trail can be drawn in more than one place - the
+   console panel and the freeze report both render the same chain. */
+function mountGraph(container, data, { onNodeClick } = {}) {
+  const network = new vis.Network(container, data, {
     physics: { enabled: true, solver: 'forceAtlas2Based',
       forceAtlas2Based: { gravitationalConstant: -62, springLength: 150, springConstant: 0.06 },
       stabilization: { iterations: 220 } },
     interaction: { hover: true, dragView: true, zoomView: true, tooltipDelay: 120 },
     layout: { improvedLayout: true },
   });
-  state.network.once('stabilizationIterationsDone', () => {
-    state.network.setOptions({ physics: false });
-    state.network.fit({ animation: { duration: 400 } });
+  network.once('stabilizationIterationsDone', () => {
+    network.setOptions({ physics: false });
+    network.fit({ animation: { duration: 400 } });
   });
-  state.network.on('click', p => {
-    if (p.nodes.length) showAccount(p.nodes[0]);
-  });
+  if (onNodeClick) network.on('click', p => { if (p.nodes.length) onNodeClick(p.nodes[0]); });
+  return network;
 }
 
 // ---------- hop ledger ----------
@@ -416,31 +424,6 @@ async function recordVerdict(verdict, note) {
   return body;
 }
 
-$('btn-freeze').addEventListener('click', async () => {
-  const t = state.trace;
-  if (!t) return;
-  if (t.end_reason === 'cash_out') {
-    alert('This trail ends at a cash-out. A freeze cannot recover these funds — escalate to law enforcement instead.');
-    return;
-  }
-  const ok = confirm(
-    `Raise a freeze request?\n\nAccount: ${t.end_node}\nAmount held: ${inr(t.amount_at_end)}\n` +
-    `Chain: ${t.hop_count} hops over ${mins(t.elapsed_minutes)}\nPriority: ${t.risk.score}/100 (${t.risk.band})\n\n` +
-    `Basis: ${t.risk.explanation}\n\n` +
-    `This logs the chain as confirmed fraud. In production it queues for a human ` +
-    `reviewer before any freeze is applied, and the verdict becomes training data.`);
-  if (!ok) return;
-
-  try {
-    const body = await recordVerdict('confirmed_fraud', 'freeze requested from console');
-    await refresh();
-    alert(`Freeze request logged for ${t.end_node}.\n\n` +
-          `${body.chains_reviewed} chain(s) reviewed so far — confirmed cases feed the next retrain.`);
-  } catch (e) {
-    alert(`Could not record the verdict — ${e.message}`);
-  }
-});
-
 $('btn-dismiss').addEventListener('click', async () => {
   if (!state.trace) return;
   if (!confirm('Dismiss this chain as a false positive? It will drop out of the queue.')) return;
@@ -493,6 +476,419 @@ async function doSearch() {
   if (r.accounts.length) showAccount(r.accounts[0]);
   else if (r.transactions.length) runTrace(r.transactions[0].txn_id);
 }
+
+// ---------- freeze request report ----------
+
+/* Replaces the old confirm()/alert() pair. Everything below is derived from the
+   open trace - nothing is written in. Fields a real freeze request needs but
+   this feed does not carry (account number, IFSC, holder name, RRN/UTR) are
+   shown as unavailable rather than invented, because a fabricated identifier on
+   a freeze request is worse than a gap. */
+
+const FR = { network: null, submitted: false };
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const NA = '<b class="na">not carried in this feed</b>';
+
+function freezeRequestId(t) {
+  // deterministic per chain, so reopening the report shows the same reference
+  let h = 0;
+  for (const ch of t.entry_txn_id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return `FRZ-${stamp}-${h.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`;
+}
+
+function field(label, value, { na = false } = {}) {
+  return `<div class="fr-field"><i>${esc(label)}</i>${na ? NA : `<b>${value}</b>`}</div>`;
+}
+
+function fraudIndicators(t) {
+  const end = t.nodes[t.nodes.length - 1];
+  const gap = t.risk.median_gap_minutes;
+  const fwd = t.risk.avg_forward_pct;
+  const out = [];
+
+  if (gap != null && gap < 180) {
+    out.push({
+      sev: gap < 30 ? 'high' : 'medium',
+      title: 'Rapid onward movement',
+      detail: `Median ${mins(gap)} between hops. Funds were moved on faster than an `
+            + `account holder would normally react to an unauthorised debit.`,
+      tag: gap < 30 ? 'strong' : 'present',
+    });
+  }
+  if (fwd != null && fwd >= 0.7) {
+    out.push({
+      sev: fwd >= 0.9 ? 'high' : 'medium',
+      title: 'High pass-through ratio',
+      detail: `${(fwd * 100).toFixed(0)}% of each received amount was forwarded on, `
+            + `consistent with a conduit account rather than a beneficiary.`,
+      tag: fwd >= 0.9 ? 'strong' : 'present',
+    });
+  }
+  if (t.hop_count >= 3) {
+    out.push({
+      sev: t.hop_count >= 5 ? 'high' : 'medium',
+      title: 'Multi-hop layering',
+      detail: `${t.hop_count} sequential transfers across ${t.nodes.length} accounts, `
+            + `distancing the beneficiary from the victim transaction.`,
+      tag: `${t.hop_count} hops`,
+    });
+  }
+  if (end.mule_score != null && end.mule_score >= 0.5) {
+    out.push({
+      sev: end.mule_score >= 0.75 ? 'high' : 'medium',
+      title: 'Beneficiary scored as a probable mule',
+      detail: `Classifier score ${(end.mule_score * 100).toFixed(0)}/100 on behavioural `
+            + `features — turnaround speed, forwarding ratio and counterparty spread.`,
+      tag: `score ${(end.mule_score * 100).toFixed(0)}`,
+    });
+  }
+  if (end.account_age_days != null && end.account_age_days < 180) {
+    out.push({
+      sev: end.account_age_days < 60 ? 'high' : 'medium',
+      title: 'Recently opened beneficiary account',
+      detail: `Account age ${end.account_age_days} days at the time of receipt.`,
+      tag: `${end.account_age_days} d old`,
+    });
+  }
+  if (t.splits_detected > 0) {
+    out.push({
+      sev: 'high',
+      title: 'Split transfers detected',
+      detail: `${t.splits_detected} hop(s) were broken into multiple smaller legs, a `
+            + `pattern used to stay under per-transaction review thresholds.`,
+      tag: 'structuring',
+    });
+  }
+  if (end.kyc_tier != null && end.kyc_tier <= 1) {
+    out.push({
+      sev: 'medium',
+      title: 'Minimal KYC tier on beneficiary',
+      detail: `Beneficiary account is at KYC tier ${end.kyc_tier}, limiting the `
+            + `identity assurance behind the account.`,
+      tag: `tier ${end.kyc_tier}`,
+    });
+  }
+  const mules = t.nodes.filter(n => n.mule_score != null && n.mule_score >= 0.5).length;
+  if (mules >= 2) {
+    out.push({
+      sev: mules >= 4 ? 'high' : 'medium',
+      title: 'Multiple flagged accounts on one path',
+      detail: `${mules} of ${t.nodes.length} accounts on this trail independently score `
+            + `as probable mules, indicating a coordinated ring rather than one bad account.`,
+      tag: `${mules} accounts`,
+    });
+  }
+  return out;
+}
+
+function requestedAction(t) {
+  const urgency = { critical: 'Immediate — same working day',
+                    high: 'Same working day',
+                    medium: 'Within T+1',
+                    low: 'Routine queue' }[t.risk.band] || 'Routine queue';
+  const partial = t.leakage_pct > 0.25;
+  return {
+    urgency,
+    type: partial ? 'Partial lien — traced residue only' : 'Full lien on the traced amount',
+    note: partial
+      ? `${(t.leakage_pct * 100).toFixed(1)}% of the original victim amount was skimmed `
+        + `across intermediate hops, so only the traced residue is claimed here.`
+      : `Substantially the whole victim amount reached this account, so the lien is `
+        + `requested against the full traced sum.`,
+  };
+}
+
+function buildFreezeReport(t) {
+  const o = state.overview;
+  const end = t.nodes[t.nodes.length - 1];
+  const entry = t.hops[0];
+  const terminal = t.hops[t.hops.length - 1];
+  const cash = t.end_reason === 'cash_out';
+  const reqId = freezeRequestId(t);
+  const caseId = t.ground_truth_chain || t.entry_txn_id;
+  const now = new Date();
+  const action = requestedAction(t);
+  const indicators = fraudIndicators(t);
+
+  $('fr-meta').innerHTML = [
+    `Request <b>${esc(reqId)}</b>`,
+    `Case <b>${esc(caseId)}</b>`,
+    `Generated <b>${esc(now.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }))}</b>`,
+    `Dataset <b>${esc(o.dataset)}</b>`,
+  ].join('');
+
+  const risk = $('fr-risk');
+  risk.textContent = `${t.risk.band.toUpperCase()} · ${t.risk.score}/100`;
+  risk.className = 'chip ' + (t.risk.band === 'critical' ? 'red'
+                            : t.risk.band === 'low' ? 'green' : 'amber');
+
+  const sections = [];
+
+  // ---- cash-out warning, when the money is already gone ----
+  if (cash) {
+    sections.push(`
+      <div class="fr-notice critical" style="margin-bottom:20px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+        <div><b>This trail terminates at a cash-out.</b> The traced funds left the banking
+        channel at the final hop, so an account freeze cannot recover them. This report is
+        retained as an evidence pack for law-enforcement escalation; the freeze request is
+        not submittable.</div>
+      </div>`);
+  }
+
+  // ---- summary ----
+  sections.push(`
+    <div class="fr-summary">
+      <div class="fr-sum"><i>${cash ? 'Amount lost' : 'Freeze amount requested'}</i>
+        <b>${inr(t.amount_at_end)}</b><span>of ${inr(t.amount_in)} originally debited</span></div>
+      <div class="fr-sum"><i>Hops traced</i>
+        <b>${t.hop_count}</b><span>${t.nodes.length} accounts on the path</span></div>
+      <div class="fr-sum"><i>Chain duration</i>
+        <b>${mins(t.elapsed_minutes)}</b><span>victim debit to final hop</span></div>
+      <div class="fr-sum"><i>Risk score</i>
+        <b style="color:${bandColor(t.risk.band)}">${t.risk.score}</b><span>${esc(t.risk.band)} priority</span></div>
+    </div>`);
+
+  // ---- 1. request details ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="1">Request Details</h4>
+      <div class="fr-grid">
+        ${field('Freeze request ID', esc(reqId))}
+        ${field('Case / chain reference', esc(caseId))}
+        ${field('Raised at', esc(now.toISOString()))}
+        ${field('Raised by', 'Fraud Desk — MuleTrace Investigation Console')}
+        ${field('Priority', `${esc(t.risk.band)} · ${t.risk.score}/100`)}
+        ${field('Detection mode', t.ground_truth_chain ? 'Proactive scan (no complaint filed)' : 'Complaint-triggered trace')}
+      </div>
+    </div>`);
+
+  // ---- 2. target account ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="2">Target Account — Freeze Beneficiary</h4>
+      <div class="fr-grid">
+        ${field('Virtual payment address', esc(end.account_id))}
+        ${field('Bank', esc(end.bank || '—'))}
+        ${field('Account number (masked)', '', { na: true })}
+        ${field('IFSC', '', { na: true })}
+        ${field('Account holder name', '', { na: true })}
+        ${field('Account age at receipt', end.account_age_days != null ? `${end.account_age_days} days` : '—')}
+        ${field('KYC tier', end.kyc_tier != null ? `Tier ${end.kyc_tier}` : '—')}
+        ${field('Mule probability', end.mule_score != null ? `${(end.mule_score * 100).toFixed(0)}/100` : '—')}
+      </div>
+    </div>`);
+
+  // ---- 3. transaction details ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="3">Transaction Details</h4>
+      <div class="fr-grid">
+        ${field('Originating UPI txn ID', esc(t.entry_txn_id))}
+        ${field('Terminal UPI txn ID', esc(terminal.txn_id))}
+        ${field('RRN / UTR', '', { na: true })}
+        ${field('Victim debit at', esc(when(t.first_seen)))}
+        ${field('Funds settled at target', esc(when(t.last_seen)))}
+        ${field('Original amount debited', inr(t.amount_in))}
+        ${field('Amount at target account', inr(t.amount_at_end))}
+        ${field('Payer (victim VPA)', esc(t.victim))}
+        ${field('First beneficiary', esc(entry.target))}
+        ${field('Channel', esc(terminal.mode))}
+      </div>
+    </div>`);
+
+  // ---- 4. basis ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="4">Basis for Freeze</h4>
+      <div class="fr-prose">
+        Funds debited from <b>${esc(t.victim)}</b> on ${esc(when(t.first_seen))} were traced
+        forward through <b>${t.hop_count} sequential transfers</b> to
+        <b>${esc(end.account_id)}</b>, where movement stopped
+        ${cash ? 'at a cash-out point' : `after ${mins(t.elapsed_minutes)}`}.
+        Each hop was admitted only where it occurred after the funds arrived, inside a
+        48-hour window, and forwarded between 70% and 125% of the amount received —
+        ${esc(t.risk.explanation)}.
+        ${cash ? '' : `<b>${inr(t.amount_at_end)}</b> is assessed as still resting at the
+        target account and is the subject of this request.`}
+      </div>
+    </div>`);
+
+  // ---- 5. indicators ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="5">Fraud Indicators</h4>
+      ${indicators.length ? `<div class="fr-indicators">${indicators.map(i => `
+        <div class="fr-ind ${i.sev}">
+          <div class="fr-ind-body">
+            <strong>${esc(i.title)}</strong>
+            <span>${i.detail}</span>
+          </div>
+          <span class="fr-ind-tag">${esc(i.tag)}</span>
+        </div>`).join('')}</div>`
+        : `<div class="fr-prose">No individual indicator crossed its threshold on this
+           chain; the request rests on the traced path itself.</div>`}
+    </div>`);
+
+  // ---- 6. money trail ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="6">Money Trail</h4>
+      <div id="fr-graph"></div>
+    </div>`);
+
+  // ---- 7. hop ledger ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="7">Hop Ledger</h4>
+      <div class="fr-table-wrap">
+        <table>
+          <thead><tr>
+            <th>Hop</th><th>Receiving account</th><th>Bank</th><th>Amount</th>
+            <th>Timestamp</th><th>Gap</th><th>Forwarded</th><th>Mule score</th>
+          </tr></thead>
+          <tbody>${t.hops.map((h, i) => {
+            const node = t.nodes[i + 1] || {};
+            const last = i === t.hops.length - 1;
+            return `<tr class="${last ? 'is-end' : ''}">
+              <td>${h.hop}</td>
+              <td class="vpa">${esc(h.target)}</td>
+              <td>${esc(node.bank || '—')}</td>
+              <td>${inr(h.amount)}</td>
+              <td>${esc(when(h.timestamp))}</td>
+              <td>${h.hop === 0 ? '—' : esc(mins(h.gap_minutes))}</td>
+              <td>${h.hop === 0 ? '—' : (h.forward_pct * 100).toFixed(0) + '%'}</td>
+              <td>${node.mule_score != null ? (node.mule_score * 100).toFixed(0) : '—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>`);
+
+  // ---- 8. requested action ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="8">Requested Action</h4>
+      <div class="fr-grid">
+        ${field('Action sought', cash ? 'No freeze — law-enforcement escalation' : 'Freeze / lien on credit balance')}
+        ${field('Amount to be held', inr(t.amount_at_end))}
+        ${field('Scope', esc(action.type))}
+        ${field('Urgency', esc(action.urgency))}
+      </div>
+      <div class="fr-prose" style="margin-top:12px">${action.note}</div>
+    </div>`);
+
+  // ---- 9. evidence ----
+  const txnIds = t.hops.map(h => h.txn_id);
+  sections.push(`
+    <div class="fr-section"><h4 data-n="9">Evidence & References</h4>
+      <div class="fr-grid">
+        ${field('Chain reference', esc(caseId))}
+        ${field('Transactions in trail', `${txnIds.length} — ${esc(txnIds.join(', '))}`)}
+        ${field('Accounts in trail', esc(t.path.join(' → '))) }
+        ${field('Detection rule', 'Temporal chain walk — forward ≥70% and ≤125%, ≤48 h gap, ≤10 hops')}
+        ${field('Termination reason', esc(t.end_reason.replace(/_/g, ' ')))}
+        ${field('Complaint reference', '', { na: true })}
+        ${field('Dataset', `${esc(o.dataset)} (seed ${o.seed})`)}
+        ${field('Split legs observed', t.splits_detected ? `${t.splits_detected}` : 'none')}
+      </div>
+    </div>`);
+
+  // ---- 10. regulatory notice ----
+  sections.push(`
+    <div class="fr-section"><h4 data-n="10">Regulatory Notice</h4>
+      <div class="fr-notice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+        <div><b>This is an operational fraud-intervention request, not a suspicious
+        transaction report.</b> It seeks a precautionary freeze or lien on the identified
+        account so that traced funds are preserved pending investigation. It does not
+        constitute an STR filing under the PMLA, and any applicable FIU-IND reporting
+        obligation remains with the authorised reporting entity. Freeze action requires
+        review and authorisation by the receiving bank; a chain surfaced by automated
+        detection is a lead, not a determination of guilt.</div>
+      </div>
+    </div>`);
+
+  $('fr-body').innerHTML = sections.join('');
+
+  // reuse the same money-trail rendering the console panel uses
+  if (FR.network) { FR.network.destroy(); FR.network = null; }
+  FR.network = mountGraph($('fr-graph'), graphData(t));
+
+  // cash-out chains are evidence packs, not freeze requests
+  const submit = $('fr-submit');
+  submit.disabled = cash;
+  submit.style.display = cash ? 'none' : '';
+  $('fr-foot-note').textContent = cash
+    ? 'Funds left the banking channel — escalate to law enforcement rather than the bank.'
+    : 'Submitting logs this chain as confirmed fraud and queues the request for bank action.';
+}
+
+function openFreezeReport() {
+  const t = state.trace;
+  if (!t) return;
+  FR.submitted = false;
+  buildFreezeReport(t);
+
+  const overlay = $('fr-overlay');
+  overlay.hidden = false;
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  $('fr-body').scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+  $('fr-close').focus();
+}
+
+function closeFreezeReport() {
+  const overlay = $('fr-overlay');
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+  setTimeout(() => {
+    overlay.hidden = true;
+    if (FR.network) { FR.network.destroy(); FR.network = null; }
+  }, 220);
+}
+
+async function submitFreezeRequest() {
+  const t = state.trace;
+  if (!t || FR.submitted) return;
+  const submit = $('fr-submit');
+  submit.disabled = true;
+  submit.textContent = 'Submitting…';
+
+  try {
+    // the existing feedback API - unchanged
+    const body = await recordVerdict('confirmed_fraud', 'freeze requested from console');
+    FR.submitted = true;
+    await refresh();
+
+    const reqId = freezeRequestId(t);
+    $('fr-foot-note').innerHTML = '';
+    $('fr-body').insertAdjacentHTML('afterbegin', `
+      <div class="fr-sent" style="margin-bottom:18px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+        <div><b>Request sent — awaiting bank acknowledgement.</b>
+        ${esc(reqId)} has been queued to ${esc(t.nodes[t.nodes.length - 1].bank || 'the receiving bank')}.
+        No freeze is in force until the bank confirms; ${body.chains_reviewed} chain(s)
+        reviewed on this dataset so far.</div>
+      </div>`);
+    $('fr-body').scrollTop = 0;
+    submit.style.display = 'none';
+    $('fr-cancel').textContent = 'Close';
+  } catch (e) {
+    submit.disabled = false;
+    submit.textContent = 'Submit Freeze Request';
+    $('fr-foot-note').innerHTML =
+      `<span style="color:var(--red)">Could not submit — ${esc(e.message)}</span>`;
+  }
+}
+
+$('btn-freeze').addEventListener('click', openFreezeReport);
+$('fr-cancel').addEventListener('click', closeFreezeReport);
+$('fr-close').addEventListener('click', closeFreezeReport);
+$('fr-submit').addEventListener('click', submitFreezeRequest);
+$('fr-overlay').addEventListener('click', e => {
+  if (e.target === $('fr-overlay')) closeFreezeReport();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('fr-overlay').hidden) closeFreezeReport();
+});
 
 boot().catch(err => {
   $('loading').innerHTML = `<p style="color:#bf5f66">Could not reach the API — ${err.message}</p>`;

@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/styles.css">
+<link rel="stylesheet" href="/assets/freeze-report.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js"></script>
 </head>
 <body>
@@ -165,6 +166,44 @@
   </div>
 
 
+</div>
+
+<!-- ---------- freeze request report ---------- -->
+<div class="fr-overlay" id="fr-overlay" role="dialog" aria-modal="true" aria-labelledby="fr-title" hidden>
+  <div class="fr-panel">
+    <div class="fr-head">
+      <span class="fr-head-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
+        </svg>
+      </span>
+      <div>
+        <h3 class="fr-title" id="fr-title">Freeze Request — Fraud Intervention Report</h3>
+        <div class="fr-meta" id="fr-meta"></div>
+      </div>
+      <span class="spacer"></span>
+      <div class="fr-head-right">
+        <span class="chip" id="fr-risk">—</span>
+        <button class="fr-close" id="fr-close" aria-label="Close report">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="fr-body" id="fr-body"></div>
+
+    <div class="fr-foot">
+      <div class="fr-foot-note" id="fr-foot-note">
+        Submitting logs this chain as confirmed fraud and queues the request for bank action.
+      </div>
+      <span class="spacer"></span>
+      <button class="btn" id="fr-cancel">Cancel</button>
+      <button class="btn btn-primary" id="fr-submit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        Submit Freeze Request
+      </button>
+    </div>
+  </div>
 </div>
 
 <script src="/assets/app.js"></script>
