@@ -63,40 +63,75 @@ async function post(path, body) {
 
 // ---------- stat cards ----------
 
+/* The stat row describes the chain currently open, with the queue-wide figure
+   kept in each sub-line for context. It used to show only portfolio totals,
+   which never moved as you worked through chains and read as frozen. */
 function renderStats() {
   const o = state.overview;
-  const total = o.funds_recoverable + o.funds_lost || 1;
+  const t = state.trace;
+  const portfolio = o.funds_recoverable + o.funds_lost || 1;
+
+  if (!t) {
+    $('stats').innerHTML = statCards([
+      { label: 'Active chains', value: o.active_chains,
+        sub: `${o.freezable_chains} freezable · ${o.cashed_out_chains} cashed out`,
+        pct: 100, bar: 'blue', pips: [['#4f8f86', 'C']] },
+      { label: 'Recoverable across queue', value: inr(o.funds_recoverable),
+        sub: `${inr(o.funds_lost)} already cashed out`,
+        pct: o.funds_recoverable / portfolio * 100, bar: '', pips: [['#6aa88f', '₹']] },
+      { label: 'Median chain duration', value: mins(o.median_chain_minutes),
+        sub: 'across the whole queue', pct: 50, bar: 'amber', pips: [['#c99a4e', '⏱']] },
+      { label: 'Accounts flagged', value: o.accounts_flagged,
+        sub: `of ${o.accounts.toLocaleString('en-IN')} on the network`,
+        pct: o.accounts_flagged / o.accounts * 100, bar: 'red', pips: [['#bf5f66', '!']] },
+    ]);
+    return;
+  }
+
+  const cash = t.end_reason === 'cash_out';
+  const mulesOnPath = t.nodes.filter(n => n.mule_score != null && n.mule_score >= 0.5).length;
+  const share = o.funds_recoverable ? t.amount_at_end / o.funds_recoverable * 100 : 0;
+  const vsMedian = o.median_chain_minutes
+    ? t.elapsed_minutes / (o.median_chain_minutes * 2) * 100 : 50;
 
   const cards = [
     {
-      label: 'Active chains', value: o.active_chains,
-      sub: `${o.freezable_chains} still freezable · ${o.cashed_out_chains} cashed out`
-         + (o.dismissed_chains ? ` · ${o.dismissed_chains} dismissed` : ''),
-      pct: Math.min(100, o.active_chains / 60 * 100), bar: 'blue',
-      pips: [['#4f8f86', 'C'], ['#3d6f68', 'H'], ['#c99a4e', 'M']],
+      label: cash ? 'Lost at cash-out' : 'Held at this end node',
+      value: inr(t.amount_at_end),
+      sub: `${inr(o.funds_recoverable)} recoverable across ${o.active_chains} active chains`,
+      pct: share, bar: cash ? 'red' : '',
+      pips: [[cash ? '#bf5f66' : '#6aa88f', '₹']],
     },
     {
-      label: 'Recoverable right now', value: inr(o.funds_recoverable),
-      sub: `${inr(o.funds_lost)} already cashed out`,
-      pct: o.funds_recoverable / total * 100, bar: '',
-      pips: [['#6aa88f', '₹']],
-    },
-    {
-      label: 'Median chain duration', value: mins(o.median_chain_minutes),
-      sub: 'complaint window before cash-out',
-      pct: Math.min(100, o.median_chain_minutes / 240 * 100), bar: 'amber',
+      label: 'This chain took',
+      value: mins(t.elapsed_minutes),
+      sub: `queue median ${mins(o.median_chain_minutes)} · `
+         + `${t.elapsed_minutes <= o.median_chain_minutes ? 'faster than' : 'slower than'} typical`,
+      pct: Math.min(100, vsMedian), bar: 'amber',
       pips: [['#c99a4e', '⏱']],
     },
     {
-      label: 'Accounts flagged', value: o.accounts_flagged,
-      sub: `of ${o.accounts.toLocaleString('en-IN')} on the network`
-         + ` · ${o.transactions.toLocaleString('en-IN')} transactions`,
-      pct: o.accounts_flagged / o.accounts * 100, bar: 'red',
-      pips: [['#bf5f66', '!']],
+      label: 'Hops traced',
+      value: t.hop_count,
+      sub: `${t.nodes.length} accounts on the path · ${mulesOnPath} scored as mules`
+         + (t.splits_detected ? ` · ${t.splits_detected} split` : ''),
+      pct: Math.min(100, t.hop_count / 8 * 100), bar: 'blue',
+      pips: [['#4f8f86', 'H']],
+    },
+    {
+      label: 'Recovery priority',
+      value: `${t.risk.score}`,
+      sub: `${t.risk.band} · ${o.accounts_flagged} accounts flagged network-wide`,
+      pct: t.risk.score, bar: t.risk.band === 'critical' ? 'red' : 'amber',
+      pips: [[bandColor(t.risk.band), '!']],
     },
   ];
 
-  $('stats').innerHTML = cards.map(c => `
+  $('stats').innerHTML = statCards(cards);
+}
+
+function statCards(cards) {
+  return cards.map(c => `
     <div class="card stat">
       <div class="stat-top">
         <span class="stat-icon">
@@ -105,7 +140,7 @@ function renderStats() {
       </div>
       <div class="stat-value">${c.value}</div>
       <div class="stat-sub">${c.sub}</div>
-      <div class="bar ${c.bar}"><span style="width:${Math.max(4, c.pct).toFixed(0)}%"></span></div>
+      <div class="bar ${c.bar}"><span style="width:${Math.max(4, Math.min(100, c.pct)).toFixed(0)}%"></span></div>
       <div class="stat-foot">
         <span class="pips">${c.pips.map(p => `<span class="pip" style="background:${p[0]}">${p[1]}</span>`).join('')}</span>
       </div>
@@ -294,6 +329,7 @@ async function runTrace(txnId) {
     const t = await get(`/api/trace/${encodeURIComponent(txnId)}?${walkQuery()}`);
     state.trace = t;
     renderEndnode(t);
+    renderStats();          // the stat row describes the open chain, so it moves too
     renderGraph(t);
     renderTimeline(t);
     renderChains();
@@ -311,12 +347,17 @@ async function runTrace(txnId) {
    cached across a data change, so regenerating the dataset moves all of it. */
 async function refresh({ retrace = false } = {}) {
   state.overview = await get('/api/overview');
-  renderStats();
 
   const { chains } = await get('/api/chains?limit=40');
   state.chains = chains;
   state.index = 0;
   renderChains();
+
+  // a trace from a previous dataset must not be described against new totals
+  if (retrace && state.trace && !chains.some(c => c.entry_txn_id === state.trace.entry_txn_id)) {
+    state.trace = null;
+  }
+  renderStats();
 
   const badge = $('dataset-badge');
   if (badge) {
@@ -326,8 +367,7 @@ async function refresh({ retrace = false } = {}) {
   }
 
   if (retrace) {
-    const stillThere = state.trace && chains.some(c => c.entry_txn_id === state.trace.entry_txn_id);
-    if (stillThere) await runTrace(state.trace.entry_txn_id);
+    if (state.trace) await runTrace(state.trace.entry_txn_id);
     else if (chains.length) await runTrace(chains[0].entry_txn_id);
     else clearTrace();
   }
@@ -342,26 +382,13 @@ function clearTrace() {
   $('endnode-chips').innerHTML = '';
   $('timeline').innerHTML = '<div class="empty">No trace loaded.</div>';
   if (state.network) { state.network.destroy(); state.network = null; }
+  renderStats();
 }
 
 async function boot() {
   await refresh({ retrace: true });
   $('loading').remove();
 }
-
-// place the indicator once fonts have settled, and keep it aligned on resize
-function placeNavPill() {
-  const pill = $('nav-pill');
-  const button = document.querySelector('#nav button.active');
-  if (!pill || !button) return;
-  pill.classList.add('instant');
-  pill.style.width = button.offsetWidth + 'px';
-  pill.style.transform = 'translateX(' + button.offsetLeft + 'px)';
-  requestAnimationFrame(() => pill.classList.remove('instant'));
-}
-placeNavPill();
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeNavPill);
-window.addEventListener('resize', placeNavPill);
 
 document.querySelectorAll('.card-head .pill-btn[data-band]').forEach(b =>
   b.addEventListener('click', () => { state.band = b.dataset.band; renderChains(); }));
