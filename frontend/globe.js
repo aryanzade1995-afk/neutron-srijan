@@ -118,30 +118,31 @@
     canvas.height = Math.round(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-    // Large globe sunk below the fold so the curved horizon crosses the upper
-    // third of the hero, the way the reference frames it.
-    R = Math.max(W, H) * 0.80;
-    cx = W * 0.44;
-    cy = H + R * 0.30;
+    // Anchor the horizon at a fixed fraction of the hero height rather than
+    // deriving it from the centre, so the rim stays visible under the nav at
+    // every viewport while the sphere itself stays huge.
+    R = Math.max(W, H) * 1.06;
+    cx = W * 0.42;
+    cy = H * 0.23 + R;
   }
 
   // ---------- drawing ----------
 
   function drawAtmosphere() {
-    const glow = ctx.createRadialGradient(cx, cy, R * 0.72, cx, cy, R * 1.16);
+    const glow = ctx.createRadialGradient(cx, cy, R * 0.70, cx, cy, R * 1.20);
     glow.addColorStop(0, 'rgba(28, 96, 200, 0.00)');
-    glow.addColorStop(0.62, 'rgba(46, 124, 235, 0.22)');
-    glow.addColorStop(0.80, 'rgba(96, 168, 255, 0.30)');
-    glow.addColorStop(1, 'rgba(10, 30, 70, 0)');
+    glow.addColorStop(0.58, 'rgba(52, 134, 245, 0.38)');
+    glow.addColorStop(0.82, 'rgba(120, 190, 255, 0.62)');
+    glow.addColorStop(1, 'rgba(14, 44, 96, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(cx, cy, R * 1.16, 0, TAU);
+    ctx.arc(cx, cy, R * 1.20, 0, TAU);
     ctx.fill();
 
     const body = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.42, R * 0.05, cx, cy, R);
-    body.addColorStop(0, 'rgba(14, 34, 70, 0.95)');
-    body.addColorStop(0.55, 'rgba(7, 19, 44, 0.97)');
-    body.addColorStop(1, 'rgba(3, 9, 24, 0.99)');
+    body.addColorStop(0, 'rgba(24, 60, 118, 0.97)');
+    body.addColorStop(0.55, 'rgba(12, 34, 74, 0.97)');
+    body.addColorStop(1, 'rgba(5, 16, 40, 0.99)');
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
@@ -151,22 +152,23 @@
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
     ctx.clip();
-    const rim = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R);
+    const rim = ctx.createRadialGradient(cx, cy, R * 0.80, cx, cy, R);
     rim.addColorStop(0, 'rgba(80, 160, 255, 0)');
-    rim.addColorStop(1, 'rgba(120, 190, 255, 0.42)');
+    rim.addColorStop(0.72, 'rgba(96, 172, 255, 0.28)');
+    rim.addColorStop(1, 'rgba(168, 216, 255, 0.85)');
     ctx.fillStyle = rim;
     ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
     ctx.restore();
   }
 
   function drawGrid(spin) {
-    ctx.fillStyle = 'rgba(96, 156, 235, 0.16)';
+    ctx.fillStyle = 'rgba(120, 180, 250, 0.34)';
     for (const g of GRID) {
       const p = rotateX(rotateY(sphere(g.lat, g.lon), spin), TILT);
       if (p.z <= 0.02) continue;
       const s = project(p);
       if (s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20) continue;
-      ctx.globalAlpha = 0.10 + p.z * 0.30;
+      ctx.globalAlpha = 0.18 + p.z * 0.52;
       ctx.fillRect(s.x, s.y, 1, 1);
     }
     ctx.globalAlpha = 1;
@@ -181,8 +183,8 @@
 
       const flicker = 0.78 + 0.22 * Math.sin(t * 1.6 + l.twinkle);
       const depth = Math.pow(p.z, 0.7);
-      const alpha = Math.min(1, depth * flicker * 0.95);
-      const radius = l.r * (0.55 + depth * 0.75);
+      const alpha = Math.min(1, depth * flicker * 1.25);
+      const radius = l.r * (0.58 + depth * 0.82);
 
       // warm amber city cores, cooler blue-white on the fringes
       const warm = l.warm;
@@ -196,9 +198,9 @@
       ctx.fill();
 
       if (radius > 1.5) {
-        ctx.globalAlpha = alpha * 0.20;
+        ctx.globalAlpha = alpha * 0.15;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, radius * 3.4, 0, TAU);
+        ctx.arc(s.x, s.y, radius * 2.6, 0, TAU);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
@@ -227,11 +229,11 @@
       ctx.lineJoin = 'round';
 
       // soft outer glow
-      ctx.strokeStyle = `rgba(70, 150, 255, ${0.10 * visible})`;
+      ctx.strokeStyle = `rgba(80, 165, 255, ${0.20 * visible})`;
       ctx.lineWidth = arc.width * 5;
       strokePath(pts);
 
-      ctx.strokeStyle = `rgba(120, 195, 255, ${0.52 * visible})`;
+      ctx.strokeStyle = `rgba(150, 212, 255, ${0.85 * visible})`;
       ctx.lineWidth = arc.width;
       strokePath(pts);
 
@@ -240,7 +242,7 @@
       const idx = Math.floor(head * STEPS);
       const tail = pts.slice(Math.max(0, idx - 7), idx + 1);
       if (tail.length > 1) {
-        ctx.strokeStyle = `rgba(215, 240, 255, ${0.85 * visible})`;
+        ctx.strokeStyle = `rgba(235, 248, 255, ${1.0 * visible})`;
         ctx.lineWidth = arc.width * 1.5;
         strokePath(tail);
 
@@ -250,7 +252,7 @@
           ctx.beginPath();
           ctx.arc(tip.x, tip.y, arc.width * 1.5, 0, TAU);
           ctx.fill();
-          ctx.fillStyle = `rgba(120, 195, 255, ${0.22 * visible})`;
+          ctx.fillStyle = `rgba(140, 205, 255, ${0.34 * visible})`;
           ctx.beginPath();
           ctx.arc(tip.x, tip.y, arc.width * 7, 0, TAU);
           ctx.fill();
@@ -267,7 +269,7 @@
   }
 
   function drawStars(t) {
-    ctx.fillStyle = 'rgba(190, 220, 255, 0.5)';
+    ctx.fillStyle = 'rgba(205, 230, 255, 0.75)';
     for (let i = 0; i < 90; i++) {
       const x = ((i * 97.31) % 100) / 100 * W;
       const y = ((i * 41.77) % 100) / 100 * H * 0.72;

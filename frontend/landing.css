@@ -6,19 +6,21 @@
 .hero-bg {
   position: absolute;
   inset: 0;
-  height: 100vh;
-  min-height: 780px;
+  height: 116vh;
+  min-height: 880px;
   overflow: hidden;
   z-index: 0;
 }
 .hero-bg canvas { width: 100%; height: 100%; display: block; }
+/* Only enough of a wash to keep the page readable where it meets the body -
+   the globe itself is left bright. */
 .hero-bg::after {
   content: "";
   position: absolute; inset: 0;
   background: linear-gradient(180deg,
-    rgba(5, 7, 12, 0.58) 0%,
-    rgba(5, 7, 12, 0.14) 32%,
-    rgba(5, 7, 12, 0.70) 80%,
+    rgba(5, 7, 12, 0.34) 0%,
+    rgba(5, 7, 12, 0.10) 30%,
+    rgba(5, 7, 12, 0.42) 72%,
     var(--bg) 100%);
 }
 
@@ -36,6 +38,11 @@
   padding: 72px 26px 0;
   text-align: center;
 }
+/* Contrast for the copy comes from text shadow rather than a scrim, so the
+   globe behind it stays fully visible. */
+.hero h1, .hero p.lede, .hero-proof {
+  text-shadow: 0 2px 18px rgba(2, 5, 12, 0.92), 0 1px 3px rgba(2, 5, 12, 0.8);
+}
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 7px 15px;
@@ -49,17 +56,34 @@
 .hero-badge svg { width: 13px; height: 13px; }
 
 .hero h1 {
+  position: relative;
   margin: 26px 0 0;
   font-size: clamp(38px, 6vw, 66px);
   line-height: 1.06;
   letter-spacing: -0.035em;
   font-weight: 800;
 }
+/* A pool of shade sized to the headline only. Big enough to hold contrast
+   against the bright globe, small enough to leave the rest of it untouched. */
+.hero h1::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 145%; height: 260%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 42% 40% at 50% 50%,
+    rgba(3, 6, 14, 0.82) 0%, rgba(3, 6, 14, 0.52) 48%, rgba(3, 6, 14, 0) 74%);
+}
 .hero h1 .grad {
-  background: var(--grad-text);
+  background: linear-gradient(100deg, #ffffff 12%, #bcdcff 96%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* the inherited text-shadow would show straight through the transparent
+     glyphs and grey the gradient out - the h1 scrim carries contrast instead */
+  text-shadow: none;
 }
 .hero p.lede {
   margin: 20px auto 0;
