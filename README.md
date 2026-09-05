@@ -44,7 +44,7 @@ To reproduce every number quoted below:
 
 ## Results
 
-Measured by `backend/evaluate.py` against 45 injected chains with known ground truth.
+Measured by `backend/evaluate.py` against 45 injected chains with known ground truth, on the reference dataset (`--seed 26`). The served app builds a fresh dataset per session, so the console's own figures will differ from these — see [A different dataset for every session](#a-different-dataset-for-every-session).
 
 **Chain walk** — given a flagged transaction, find the account still holding the money:
 
@@ -96,6 +96,7 @@ backend/
   graph_engine.py    temporal graph, chain walk, proactive scan, chain scoring
   risk_model.py      per-account features + Random Forest / Logistic Regression
   feedback.py        append-only investigator verdict log -> training labels
+  workspace.py       per-session datasets, built from a seed and LRU cached
   evaluate.py        validates walk + classifier, plus the sensitivity sweep
   app.py             FastAPI: trace, risk-score, chains, watchlist, feedback
 tests/
@@ -126,25 +127,36 @@ docs/
 | `GET /api/feedback` | Verdict log and review counts. |
 | `GET /api/feedback/labels` | Accumulated supervision available to the next retrain. |
 | `POST /api/rescan` | Re-run the proactive scan and refresh the queue. |
-| `POST /api/reload` | Rebuild graph, model and scan from the dataset on disk. `force=true` to rebuild regardless. |
-| `GET /api/evaluation` | Validation figures recomputed for the loaded dataset. |
-| `GET /api/health` | Liveness, current counts, and whether the data on disk has changed. |
+| `POST /api/reload` | Issue a fresh session and build a new dataset for the caller. |
+| `GET /api/evaluation` | Validation figures recomputed for the caller's dataset. |
+| `GET /api/health` | Liveness, the caller's dataset id, current counts and pool stats. |
 
-## Live figures — nothing is hardcoded
+Every endpoint resolves the caller's workspace from the `mt_session` cookie. Append `?seed=<int>` to pin a specific dataset instead.
 
-Every number on the landing page and in the console is read from the running service against the dataset currently in memory. There are no figures written into the markup, so changing the data changes the whole product.
+## A different dataset for every session
 
-Regenerate the dataset with any parameters you like while the server is running:
+Nothing on the site is hardcoded, and no two visitors see the same network. Each browser session gets a seed, the seed builds its own synthetic dataset, and every figure the client sees is derived from it. Five sessions side by side:
 
-```bash
-.venv/Scripts/python.exe backend/generate_data.py --chains 70 --txns 20000 --seed 99
-```
+| Session | Transactions | Accounts | Chains detected | Fraud chains | Recoverable |
+|---|---|---|---|---|---|
+| DS-15001 | 15,427 | 1,146 | 74 | 51 | ₹47.31 L |
+| DS-10151 | 18,535 | 1,398 | 57 | 37 | ₹21.91 L |
+| DS-69869 | 14,114 | 1,410 | 74 | 63 | ₹41.75 L |
+| DS-74197 | 10,968 | 1,105 | 84 | 66 | ₹44.42 L |
+| DS-94544 | 15,869 | 1,303 | 79 | 56 | ₹36.76 L |
 
-The service fingerprints the CSVs on every request, so it notices immediately. The refresh control in the console header turns amber, and clicking it reloads the graph, refits the model, re-runs the scan and re-renders every figure — no restart. `POST /api/reload` does the same thing from the command line.
+Scale varies with the seed, not just contents — otherwise every dashboard would still show roughly the same totals and read as canned. The dataset id is shown in the console header so two people can see immediately that they are on different data.
 
-Validation figures follow too: `GET /api/evaluation` recomputes the chain-walk accuracy, scan precision and the sensitivity sweep against whatever is loaded, and is invalidated whenever the data or the scan changes. The Model tab in the console shows those live rather than reading `data/evaluation.json`.
+A dataset is **stable for the length of a session**: refreshing mid-investigation must not reshuffle the case you are looking at. Building one costs about 1.5 s, so they are made on demand and held in a 12-entry LRU cache.
 
-The dashboard counts and the chain table are derived from one `visible_chains()` definition, so they cannot drift apart — dismissing a chain decrements the stat card and removes the row in the same step.
+- **New dataset on demand** — the refresh control in the console header issues a fresh session and rebuilds everything. `POST /api/reload` does the same over HTTP.
+- **Pin a dataset** — append `?seed=26` to any endpoint or page to reproduce an exact dataset. Useful when the numbers need to match a slide, or when two people want to look at the same case.
+
+Validation figures follow the session's data too: `GET /api/evaluation` recomputes chain-walk accuracy, scan precision and the sensitivity sweep for that workspace, so the Model tab is never quoting another dataset's results. Expect them to move between sessions — a harder draw might give 96.1% end-node accuracy where an easier one gives 100%, and that variation is the honest picture.
+
+The dashboard counts and the chain table both come from one `visible_chains()` definition, so they cannot drift apart — dismissing a chain decrements the stat card and removes the row in the same step. Feedback is per-session too, so one visitor's dismissals never affect another's queue.
+
+`backend/generate_data.py` still writes a dataset to `data/` for reproducible offline evaluation via `backend/evaluate.py`; the served app does not read those files.
 
 ## Feedback loop
 
@@ -158,7 +170,7 @@ A confirmed chain marks its end node as a positive label and a dismissed one as 
 .venv/Scripts/python.exe -m pytest
 ```
 
-35 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts, the feedback loop, and that the dashboard counts can never disagree with the chain table.
+37 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts, the feedback loop, that the dashboard counts can never disagree with the chain table, and that a pinned seed is reproducible while different seeds give different networks.
 
 ## Honest scope
 

@@ -22,3 +22,4 @@ node_modules/
 Thumbs.db
 data/*.jsonl
 .pytest_cache/
+data/feedback/

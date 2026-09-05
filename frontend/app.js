@@ -406,11 +406,12 @@ async function refresh({ retrace = false } = {}) {
   state.index = 0;
   renderChains();
 
-  const stale = state.overview.data_stale;
-  $('btn-rescan').classList.toggle('attention', !!stale);
-  $('btn-rescan').title = stale
-    ? 'Dataset on disk has changed — click to reload'
-    : 'Reload data and re-run the proactive scan';
+  const badge = $('dataset-badge');
+  if (badge) {
+    badge.textContent = state.overview.dataset;
+    badge.title = `Dataset ${state.overview.dataset} (seed ${state.overview.seed}) — `
+                + 'every session gets its own network';
+  }
 
   if (retrace) {
     const stillThere = state.trace && chains.some(c => c.entry_txn_id === state.trace.entry_txn_id);
@@ -514,15 +515,14 @@ $('btn-rescan').addEventListener('click', async () => {
   btn.disabled = true;
   btn.classList.add('busy');
   try {
-    const reload = await post('/api/reload');
-    if (!reload.reloaded) await post('/api/rescan');
+    const fresh = await post('/api/reload');
     const o = await refresh({ retrace: true });
-    if (reload.reloaded) {
-      alert(`Dataset reloaded.\n\n${o.transactions.toLocaleString('en-IN')} transactions · ` +
-            `${o.accounts.toLocaleString('en-IN')} accounts · ${o.active_chains} chains in the queue.`);
-    }
+    alert(`New dataset generated: ${fresh.dataset}\n\n` +
+          `${o.transactions.toLocaleString('en-IN')} transactions · ` +
+          `${o.accounts.toLocaleString('en-IN')} accounts · ` +
+          `${o.injected_chains} fraud chains · ${o.active_chains} in the queue.`);
   } catch (e) {
-    alert(`Reload failed — ${e.message}`);
+    alert(`Could not generate a new dataset — ${e.message}`);
   } finally {
     btn.disabled = false;
     btn.classList.remove('busy');

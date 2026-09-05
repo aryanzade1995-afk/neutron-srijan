@@ -8,23 +8,23 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from graph_engine import DATA_DIR
-
-pytestmark = pytest.mark.skipif(
-    not (DATA_DIR / "transactions.csv").exists(),
-    reason="dataset not generated - run backend/generate_data.py",
-)
+SEED = 4242          # pin one dataset so the suite is deterministic
 
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     import app as app_module
-    from feedback import FeedbackStore
+    import workspace as workspace_module
+
+    # keep the suite from writing into the real per-session audit logs
+    workspace_module.FEEDBACK_DIR = tmp_path_factory.mktemp("feedback")
+
+    # Every cookie-based session resolves to one workspace, so the suite is
+    # deterministic. Requests that pass ?seed= explicitly still bypass this,
+    # which is what the seed tests need.
+    app_module._seed_from_token = lambda token: SEED
 
     with TestClient(app_module.app) as test_client:
-        # keep the suite from appending to the real audit log
-        app_module.STATE["feedback"] = FeedbackStore(
-            tmp_path_factory.mktemp("feedback") / "feedback.jsonl")
         yield test_client
 
 
@@ -32,6 +32,7 @@ def test_health(client):
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert body["transactions"] > 0
+    assert body["seed"] == SEED
 
 
 def test_overview_reports_totals_and_model(client):
@@ -181,11 +182,26 @@ def test_evaluation_describes_the_loaded_dataset(client):
     assert len(ev["sensitivity"]) == 5
 
 
-def test_reload_is_a_no_op_when_the_dataset_has_not_changed(client):
-    body = client.post("/api/reload").json()
-    assert body["reloaded"] is False
-    assert body["reason"] == "dataset unchanged"
-    assert client.get("/api/health").json()["data_stale"] is False
+def test_pinning_a_seed_reproduces_the_same_dataset(client):
+    """A pinned seed must be reproducible - a demo has to be able to return to
+    the exact numbers on a slide."""
+    a = client.get(f"/api/overview?seed={SEED}").json()
+    b = client.get(f"/api/overview?seed={SEED}").json()
+    assert (a["transactions"], a["accounts"], a["active_chains"]) ==            (b["transactions"], b["accounts"], b["active_chains"])
+
+
+def test_different_seeds_give_different_datasets(client):
+    """Two sessions must not land on the same network."""
+    seen = set()
+    for seed in (11, 22, 33, 44):
+        o = client.get(f"/api/overview?seed={seed}").json()
+        assert o["seed"] == seed
+        seen.add((o["transactions"], o["accounts"], o["injected_chains"]))
+    assert len(seen) == 4
+
+
+def test_a_rejected_seed_is_reported(client):
+    assert client.get("/api/overview?seed=notanumber").status_code == 422
 
 
 def test_rejects_an_unknown_verdict(client):
