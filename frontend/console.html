@@ -39,9 +39,6 @@
     <div class="nav" id="nav">
       <span class="nav-pill" id="nav-pill" aria-hidden="true"></span>
       <button class="active" data-view="chains">Live Chains</button>
-      <button data-view="trace">Trace</button>
-      <button data-view="watchlist">Watchlist</button>
-      <button data-view="model">Model</button>
     </div>
 
     <div class="topbar-right">
@@ -145,10 +142,8 @@
     </div>
   </div>
 
-  <!-- ---------- switchable panel ---------- -->
-
-  <!-- Live chains -->
-  <div class="view active" id="view-chains">
+  <!-- ---------- active chains ---------- -->
+  <div id="view-chains">
     <div class="card">
       <div class="card-head">
         <div>
@@ -172,83 +167,6 @@
     </div>
   </div>
 
-  <!-- Trace -->
-  <div class="view" id="view-trace">
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-head"><div><h3>Walk parameters</h3><div class="sub">what counts as the same money moving on</div></div></div>
-        <div class="pad">
-          <label class="kv"><span>Minimum forwarded</span><span><input type="range" id="p-pct" min="30" max="100" value="70"> <b id="p-pct-v">70%</b></span></label>
-          <label class="kv"><span>Window after arrival</span><span><input type="range" id="p-gap" min="1" max="168" value="48"> <b id="p-gap-v">48 h</b></span></label>
-          <label class="kv"><span>Max hops</span><span><input type="range" id="p-hops" min="2" max="20" value="10"> <b id="p-hops-v">10</b></span></label>
-          <div style="display:flex;gap:9px;margin-top:14px">
-            <input id="txn-input" placeholder="TXN0000123" style="flex:1;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--r-pill);padding:9px 15px;color:var(--text);font:inherit;font-size:12.5px;outline:none">
-            <button class="btn btn-primary" id="btn-trace">Trace</button>
-          </div>
-          <div class="note" style="margin-top:14px">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
-            <div>Loosening these widens the walk and will pull in unrelated transfers. The defaults
-              (70% forwarded, 48 h) are the ones the evaluation reports against.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><div><h3>Incoming complaints</h3><div class="sub">victim-reported transactions awaiting a trace</div></div></div>
-        <div class="table-wrap">
-          <table><thead><tr><th>Txn</th><th>Victim</th><th>Amount</th><th>Reported</th></tr></thead>
-          <tbody id="complaints-body"></tbody></table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Watchlist -->
-  <div class="view" id="view-watchlist">
-    <div class="card">
-      <div class="card-head">
-        <div><h3>Mule watchlist</h3><div class="sub">accounts the classifier flags before any complaint exists</div></div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Account</th><th>Bank</th><th>Age</th><th>Forwarded</th><th>Turnaround</th><th>Received</th><th>Mule score</th></tr></thead>
-          <tbody id="watchlist-body"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Model -->
-  <div class="view" id="view-model">
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-head"><div><h3>Classifier</h3><div class="sub">held-out 30% test split</div></div></div>
-        <div class="pad" id="model-metrics"></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h3>What drives the score</h3><div class="sub">feature importance</div></div></div>
-        <div class="pad" id="model-features"></div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:14px">
-      <div class="card-head">
-        <div>
-          <h3>Validation on the loaded dataset</h3>
-          <div class="sub">recomputed whenever the data changes — never read from a cached file</div>
-        </div>
-      </div>
-      <div class="pad" id="model-validation"></div>
-    </div>
-    <div style="margin-top:14px" class="note">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
-      <div><b>These are ranking figures on synthetic behaviour, not a performance claim.</b>
-        Mule accounts here are recruited the way real rings recruit them — 35% freshly opened,
-        50% existing accounts turned, 15% dormant accounts reactivated — so account age does not
-        give the model a free answer, and the scores are correspondingly modest. The chain walk is
-        the deterministic part that transfers to real data; this scorer only orders the queue, and
-        would need retraining on NPCI's own graph using the verdicts captured under Feedback.</div>
-    </div>
-  </div>
 
 </div>
 

@@ -267,27 +267,6 @@ function renderChains() {
 
 // ---------- watchlist ----------
 
-async function renderWatchlist() {
-  const { accounts } = await get('/api/watchlist?limit=30&min_score=0.4');
-  $('watchlist-body').innerHTML = accounts.map(a => `
-    <tr data-acc="${a.account_id}">
-      <td class="vpa">${short(a.account_id, 28)}</td>
-      <td>${a.bank}</td>
-      <td class="mono">${a.account_age_days} d</td>
-      <td class="mono">${(a.forward_ratio * 100).toFixed(0)}%</td>
-      <td class="mono">${mins(a.median_response_min)}</td>
-      <td class="mono">${inr(a.total_in)}</td>
-      <td>
-        <div class="score-cell">
-          <span class="score-track"><span style="width:${a.score * 100}%;background:${a.score >= .75 ? '#bf5f66' : '#c99a4e'}"></span></span>
-          <b class="mono">${(a.score * 100).toFixed(0)}</b>
-        </div>
-      </td>
-    </tr>`).join('');
-  $('watchlist-body').querySelectorAll('tr[data-acc]').forEach(tr =>
-    tr.addEventListener('click', () => showAccount(tr.dataset.acc)));
-}
-
 async function showAccount(id) {
   try {
     const a = await get('/api/risk-score/' + encodeURIComponent(id));
@@ -298,74 +277,16 @@ async function showAccount(id) {
   } catch (e) { /* unknown account - nothing to show */ }
 }
 
-// ---------- model ----------
-
-async function renderModel() {
-  const m = state.overview.model, b = state.overview.baseline;
-  $('model-metrics').innerHTML = `
-    <div class="kv"><span>Algorithm</span><span>${m.algorithm}</span></div>
-    <div class="kv"><span>Accounts scored</span><span>${m.n_accounts.toLocaleString('en-IN')}</span></div>
-    <div class="kv"><span>Known mules</span><span>${m.n_mules}</span></div>
-    <div class="kv"><span>Precision</span><span>${(m.precision * 100).toFixed(1)}%</span></div>
-    <div class="kv"><span>Recall</span><span>${(m.recall * 100).toFixed(1)}%</span></div>
-    <div class="kv"><span>F1</span><span>${m.f1.toFixed(3)}</span></div>
-    <div class="kv"><span>ROC AUC</span><span>${m.roc_auc.toFixed(3)}</span></div>
-    <div class="kv"><span>Baseline (logistic)</span><span>F1 ${b.f1.toFixed(3)} · AUC ${b.roc_auc.toFixed(3)}</span></div>`;
-
-  const max = Math.max(...m.top_features.map(f => f.importance)) || 1;
-  $('model-features').innerHTML = m.top_features.map(f => `
-    <div style="padding:9px 0;border-bottom:1px solid var(--line)">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:7px">
-        <span>${f.label}</span><b class="mono">${f.importance.toFixed(3)}</b>
-      </div>
-      <div class="bar blue"><span style="width:${(f.importance / max * 100).toFixed(0)}%"></span></div>
-    </div>`).join('');
-
-  // validation figures for the dataset currently loaded, computed on demand
-  const box = $('model-validation');
-  box.innerHTML = '<div class="empty">Evaluating current dataset…</div>';
-  try {
-    const ev = await get('/api/evaluation');
-    const w = ev.chain_walk, s = ev.proactive_scan;
-    box.innerHTML = `
-      <div class="kv"><span>Chains in dataset</span><span>${ev.dataset.injected_chains}</span></div>
-      <div class="kv"><span>End-node accuracy</span><span>${(w.end_node_accuracy * 100).toFixed(1)}%</span></div>
-      <div class="kv"><span>Full-path recovery</span><span>${(w.full_path_recovery * 100).toFixed(1)}%</span></div>
-      <div class="kv"><span>Scan recall</span><span>${(s.recall_vs_injected * 100).toFixed(1)}%</span></div>
-      <div class="kv"><span>Precision @10 / @20</span><span>${(s.precision_at_10 * 100).toFixed(0)}% / ${(s.precision_at_20 * 100).toFixed(0)}%</span></div>
-      <div class="kv"><span>Precision, whole set</span><span>${(s.precision * 100).toFixed(1)}%</span></div>
-      <div style="margin-top:14px;font-size:11px;color:var(--muted-2);font-weight:600;letter-spacing:.05em">
-        WALK SENSITIVITY
-      </div>
-      ${ev.sensitivity.map(r => `
-        <div class="kv"><span>${r.setting}</span><span>${(r.end_node_accuracy * 100).toFixed(1)}%</span></div>
-      `).join('')}`;
-  } catch (e) {
-    box.innerHTML = `<div class="empty">Evaluation unavailable — ${e.message}</div>`;
-  }
-}
-
-// ---------- complaints ----------
-
-async function renderComplaints() {
-  const { complaints } = await get('/api/complaints?limit=14');
-  $('complaints-body').innerHTML = complaints.map(c => `
-    <tr data-txn="${c.txn_id}">
-      <td class="mono">${c.txn_id}</td>
-      <td class="vpa">${short(c.victim, 20)}</td>
-      <td class="mono">${inr(c.amount)}</td>
-      <td class="vpa">${when(c.timestamp)}</td>
-    </tr>`).join('');
-  $('complaints-body').querySelectorAll('tr[data-txn]').forEach(tr =>
-    tr.addEventListener('click', () => { runTrace(tr.dataset.txn); switchView('chains'); }));
-}
-
 // ---------- trace ----------
 
+/* The walk thresholds the console traces with. These are the values the
+   evaluation reports against; the API still accepts overrides per request. */
+const WALK = { min_forward_pct: 0.70, max_gap_hours: 48, max_hops: 10 };
+
 function walkQuery() {
-  return `min_forward_pct=${(+$('p-pct').value / 100).toFixed(2)}`
-       + `&max_gap_hours=${$('p-gap').value}`
-       + `&max_hops=${$('p-hops').value}`;
+  return `min_forward_pct=${WALK.min_forward_pct.toFixed(2)}`
+       + `&max_gap_hours=${WALK.max_gap_hours}`
+       + `&max_hops=${WALK.max_hops}`;
 }
 
 async function runTrace(txnId) {
@@ -383,24 +304,6 @@ async function runTrace(txnId) {
 }
 
 // ---------- views ----------
-
-function moveNavPill(button, instant) {
-  const pill = $('nav-pill');
-  if (!pill || !button) return;
-  if (instant) pill.classList.add('instant');
-  pill.style.width = button.offsetWidth + 'px';
-  pill.style.transform = 'translateX(' + button.offsetLeft + 'px)';
-  if (instant) requestAnimationFrame(() => pill.classList.remove('instant'));
-}
-
-function switchView(name) {
-  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  moveNavPill(document.querySelector('#nav button[data-view="' + name + '"]'));
-  if (name === 'watchlist') renderWatchlist();
-  if (name === 'model') renderModel();
-  if (name === 'trace') renderComplaints();
-}
 
 // ---------- boot ----------
 
@@ -446,11 +349,16 @@ async function boot() {
   $('loading').remove();
 }
 
-document.querySelectorAll('#nav button').forEach(b =>
-  b.addEventListener('click', () => switchView(b.dataset.view)));
-
 // place the indicator once fonts have settled, and keep it aligned on resize
-const placeNavPill = () => moveNavPill(document.querySelector('#nav button.active'), true);
+function placeNavPill() {
+  const pill = $('nav-pill');
+  const button = document.querySelector('#nav button.active');
+  if (!pill || !button) return;
+  pill.classList.add('instant');
+  pill.style.width = button.offsetWidth + 'px';
+  pill.style.transform = 'translateX(' + button.offsetLeft + 'px)';
+  requestAnimationFrame(() => pill.classList.remove('instant'));
+}
 placeNavPill();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeNavPill);
 window.addEventListener('resize', placeNavPill);
@@ -545,30 +453,19 @@ $('btn-rescan').addEventListener('click', async () => {
   }
 });
 
-$('btn-trace').addEventListener('click', () => {
-  const v = $('txn-input').value.trim();
-  if (v) { runTrace(v); switchView('chains'); }
-});
-
 $('search-go').addEventListener('click', doSearch);
 $('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 
+/* The search box is now the only way to trace an arbitrary transaction, so it
+   accepts a txn id directly as well as an account. */
 async function doSearch() {
   const q = $('search-input').value.trim();
   if (!q) return;
-  if (/^TXN\d+$/i.test(q)) { runTrace(q.toUpperCase()); switchView('chains'); return; }
+  if (/^TXN\d+$/i.test(q)) { runTrace(q.toUpperCase()); return; }
   const r = await get('/api/search?q=' + encodeURIComponent(q));
   if (r.accounts.length) showAccount(r.accounts[0]);
   else if (r.transactions.length) runTrace(r.transactions[0].txn_id);
 }
-
-[['p-pct', v => v + '%'], ['p-gap', v => v + ' h'], ['p-hops', v => v]].forEach(([id, fmt]) => {
-  const el = $(id);
-  el.addEventListener('input', () => {
-    $(id + '-v').textContent = fmt(el.value);
-    if (state.trace) runTrace(state.trace.entry_txn_id);
-  });
-});
 
 boot().catch(err => {
   $('loading').innerHTML = `<p style="color:#bf5f66">Could not reach the API — ${err.message}</p>`;
