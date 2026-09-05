@@ -79,6 +79,14 @@ def evaluate_scan(graph, truth: pd.DataFrame, params: WalkParams, model: RiskMod
             return 0.0
         return round(sum(1 for c in head if c["end_node"] in truth_ends) / len(head), 4)
 
+    # how far down the ranked queue an investigator gets before the first false
+    # alarm - the most direct read on whether the ordering is trustworthy
+    clean_prefix = 0
+    for chain in chains:
+        if chain["end_node"] not in truth_ends:
+            break
+        clean_prefix += 1
+
     return {
         "chains_surfaced": len(chains),
         "true_chains_found": len(hits),
@@ -87,24 +95,23 @@ def evaluate_scan(graph, truth: pd.DataFrame, params: WalkParams, model: RiskMod
         "precision_at_10": precision_at(10),
         "precision_at_20": precision_at(20),
         "precision_at_30": precision_at(30),
+        "clean_prefix": clean_prefix,
     }
 
 
-def main() -> None:
-    graph = load_graph()
-    truth = pd.read_csv(DATA_DIR / "ground_truth.csv")
+def compute(graph, truth: pd.DataFrame, model: RiskModel, report) -> dict:
+    """Full evaluation over an already-built graph and fitted model.
+
+    Kept separate from main() so the API can recompute these numbers in-process
+    after the dataset changes, rather than serving figures from a stale file.
+    """
     params = WalkParams()
-
-    features = build_features(graph)
-    model = RiskModel()
-    report = model.fit(features)
-
-    results = {
+    return {
         "dataset": {
             "transactions": int(len(graph.txns)),
             "accounts": int(len(graph.accounts)),
             "injected_chains": int(len(truth)),
-            "cashed_out_chains": int(truth["cashed_out"].sum()),
+            "cashed_out_chains": int(truth["cashed_out"].sum()) if len(truth) else 0,
         },
         "chain_walk": evaluate_chain_walk(graph, truth, params),
         "sensitivity": evaluate_sensitivity(graph, truth),
@@ -112,6 +119,17 @@ def main() -> None:
         "risk_model": report.as_dict(),
         "baseline": model.baseline_report,
     }
+
+
+def main() -> None:
+    graph = load_graph()
+    truth = pd.read_csv(DATA_DIR / "ground_truth.csv")
+
+    features = build_features(graph)
+    model = RiskModel()
+    report = model.fit(features)
+
+    results = compute(graph, truth, model, report)
 
     out = DATA_DIR / "evaluation.json"
     out.write_text(json.dumps(results, indent=2), encoding="utf-8")

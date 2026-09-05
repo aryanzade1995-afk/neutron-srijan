@@ -147,6 +147,47 @@ def test_dismissed_chains_drop_out_of_the_queue(client):
     assert target in with_dismissed
 
 
+def test_dashboard_counts_match_the_table(client):
+    """The stat cards and the queue must never disagree - they are the same set."""
+    overview = client.get("/api/overview").json()
+    listed = client.get("/api/chains?limit=500").json()
+    assert overview["active_chains"] == listed["count"]
+    assert overview["freezable_chains"] + overview["cashed_out_chains"] == overview["active_chains"]
+
+    with_dismissed = client.get("/api/chains?limit=500&include_dismissed=true").json()
+    assert overview["dismissed_chains"] == with_dismissed["count"] - listed["count"]
+
+
+def test_dismissing_a_chain_moves_the_dashboard_count(client):
+    before = client.get("/api/overview").json()["active_chains"]
+    target = client.get("/api/chains?limit=500").json()["chains"][-1]["entry_txn_id"]
+
+    client.post("/api/feedback", json={"entry_txn_id": target, "verdict": "false_positive"})
+
+    after = client.get("/api/overview").json()
+    assert after["active_chains"] == before - 1
+    assert after["active_chains"] == client.get("/api/chains?limit=500").json()["count"]
+
+
+def test_evaluation_describes_the_loaded_dataset(client):
+    overview = client.get("/api/overview").json()
+    ev = client.get("/api/evaluation").json()
+    # the evaluation must be computed against the data actually in memory
+    assert ev["dataset"]["transactions"] == overview["transactions"]
+    assert ev["dataset"]["accounts"] == overview["accounts"]
+    assert ev["dataset"]["injected_chains"] == overview["injected_chains"]
+    assert 0 <= ev["chain_walk"]["end_node_accuracy"] <= 1
+    assert ev["proactive_scan"]["clean_prefix"] >= 0
+    assert len(ev["sensitivity"]) == 5
+
+
+def test_reload_is_a_no_op_when_the_dataset_has_not_changed(client):
+    body = client.post("/api/reload").json()
+    assert body["reloaded"] is False
+    assert body["reason"] == "dataset unchanged"
+    assert client.get("/api/health").json()["data_stale"] is False
+
+
 def test_rejects_an_unknown_verdict(client):
     entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
     response = client.post("/api/feedback", json={"entry_txn_id": entry, "verdict": "maybe"})

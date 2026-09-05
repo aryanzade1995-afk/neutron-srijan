@@ -9,6 +9,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import evaluate
 from feedback import FeedbackStore, Verdict
 from graph_engine import DATA_DIR, WalkParams, load_graph
 from risk_model import RiskModel, build_features
@@ -19,8 +20,26 @@ FRONTEND = ROOT / "frontend"
 STATE: dict = {}
 
 
+DATASET_FILES = ("transactions.csv", "accounts.csv", "ground_truth.csv")
+
+
+def data_fingerprint() -> list:
+    """Identity of the dataset currently on disk.
+
+    Regenerating the data must be visible without a restart - during a demo the
+    dataset is changed deliberately and every figure has to follow it.
+    """
+    stamps = []
+    for name in DATASET_FILES:
+        path = DATA_DIR / name
+        stamps.append([name, path.stat().st_mtime_ns, path.stat().st_size]
+                      if path.exists() else [name, 0, 0])
+    return stamps
+
+
 def bootstrap() -> None:
     """Build the graph, score every account, and pre-run the proactive scan."""
+    fingerprint = data_fingerprint()
     graph = load_graph()
     features = build_features(graph)
     model = RiskModel()
@@ -34,8 +53,14 @@ def bootstrap() -> None:
     STATE["features"] = features
     STATE["report"] = report
     STATE["truth"] = truth
-    STATE["feedback"] = FeedbackStore(DATA_DIR / "feedback.jsonl")
+    STATE["fingerprint"] = fingerprint
+    STATE["evaluation"] = None          # recomputed lazily, never served stale
+    STATE.setdefault("feedback", FeedbackStore(DATA_DIR / "feedback.jsonl"))
     rescan()
+
+
+def data_is_stale() -> bool:
+    return STATE.get("fingerprint") != data_fingerprint()
 
 
 def rescan() -> list[dict]:
@@ -47,7 +72,20 @@ def rescan() -> list[dict]:
     graph, model = STATE["graph"], STATE["model"]
     chains = graph.scan(WalkParams(), min_hops=3, limit=60, risk_lookup=model.score)
     STATE["chains"] = [_decorate(c) for c in chains]
+    STATE["evaluation"] = None
     return STATE["chains"]
+
+
+def visible_chains(band: str | None = None, include_dismissed: bool = False) -> list[dict]:
+    """The working queue. Single definition, so the counts on the dashboard and
+    the rows in the table can never disagree."""
+    items = STATE["chains"]
+    if band:
+        items = [c for c in items if c["risk"]["band"] == band]
+    if not include_dismissed:
+        items = [c for c in items
+                 if (c.get("review") or {}).get("verdict") != "false_positive"]
+    return items
 
 
 @asynccontextmanager
@@ -107,16 +145,23 @@ def _decorate(trace: dict) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "transactions": int(len(STATE["graph"].txns))}
+    return {
+        "status": "ok",
+        "transactions": int(len(STATE["graph"].txns)),
+        "accounts": int(len(STATE["graph"].accounts)),
+        "chains": len(STATE["chains"]),
+        "data_stale": data_is_stale(),
+    }
 
 
 @app.get("/api/overview")
 def overview() -> dict:
-    graph, model, chains = STATE["graph"], STATE["model"], STATE["chains"]
+    graph, model = STATE["graph"], STATE["model"]
+    chains = visible_chains()                       # same queue the table renders
     live = [c for c in chains if c["recoverable"]]
-    at_risk = sum(c["amount_at_end"] for c in live)
     gaps = sorted(c["elapsed_minutes"] for c in chains) or [0]
     flagged = int((model.scores >= 0.5).sum()) if model.scores is not None else 0
+    store: FeedbackStore = STATE["feedback"]
 
     return {
         "transactions": int(len(graph.txns)),
@@ -125,10 +170,15 @@ def overview() -> dict:
         "active_chains": len(chains),
         "freezable_chains": len(live),
         "cashed_out_chains": len(chains) - len(live),
-        "funds_recoverable": round(at_risk, 2),
+        "dismissed_chains": len(STATE["chains"]) - len(chains),
+        "funds_recoverable": round(sum(c["amount_at_end"] for c in live), 2),
         "funds_lost": round(sum(c["amount_at_end"] for c in chains if not c["recoverable"]), 2),
         "median_chain_minutes": gaps[len(gaps) // 2],
         "accounts_flagged": flagged,
+        "mule_accounts_known": int(STATE["features"]["is_mule"].sum()),
+        "injected_chains": int(len(STATE["truth"])),
+        "data_stale": data_is_stale(),
+        "review": store.summary(),
         "model": STATE["report"].as_dict(),
         "baseline": model.baseline_report,
     }
@@ -137,21 +187,45 @@ def overview() -> dict:
 @app.get("/api/chains")
 def chains(limit: int = 25, band: str | None = None,
            include_dismissed: bool = False) -> dict:
-    items = STATE["chains"]
-    if band:
-        items = [c for c in items if c["risk"]["band"] == band]
-    if not include_dismissed:
-        # a chain an investigator has already dismissed should not keep returning
-        # to the top of their queue
-        items = [c for c in items
-                 if not (c.get("review") or {}).get("verdict") == "false_positive"]
+    items = visible_chains(band, include_dismissed)
     return {"count": len(items), "chains": items[:limit]}
 
 
 @app.post("/api/rescan")
 def trigger_rescan() -> dict:
-    chains = rescan()
-    return {"chains": len(chains)}
+    return {"chains": len(rescan()), "reloaded": False}
+
+
+@app.post("/api/reload")
+def reload_data(force: bool = False) -> dict:
+    """Rebuild everything from whatever is on disk now.
+
+    Regenerating the dataset mid-demo would otherwise leave the service serving
+    a graph that no longer exists, so this re-reads the CSVs, refits the model
+    and re-runs the scan.
+    """
+    if not force and not data_is_stale():
+        return {"reloaded": False, "reason": "dataset unchanged",
+                "chains": len(STATE["chains"])}
+    bootstrap()
+    return {"reloaded": True, "chains": len(STATE["chains"]),
+            "transactions": int(len(STATE["graph"].txns)),
+            "accounts": int(len(STATE["graph"].accounts))}
+
+
+@app.get("/api/evaluation")
+def evaluation() -> dict:
+    """Validation figures for the dataset currently loaded.
+
+    Computed on demand and cached until the data or the scan changes, so these
+    can never drift away from the numbers the console is showing.
+    """
+    if STATE.get("evaluation") is None:
+        if STATE["truth"].empty:
+            raise HTTPException(404, "no ground truth available for this dataset")
+        STATE["evaluation"] = evaluate.compute(
+            STATE["graph"], STATE["truth"], STATE["model"], STATE["report"])
+    return STATE["evaluation"]
 
 
 @app.get("/api/trace/{txn_id}")

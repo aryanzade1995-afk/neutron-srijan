@@ -68,11 +68,12 @@
     </div>
 
     <div class="hero-proof">
-      <b>100%</b> end-node accuracy on 45 reconstructed chains
+      <b data-metric="end-node-accuracy">—</b> end-node accuracy on
+      <b data-metric="injected-chains">—</b> reconstructed chains
       <span class="sep">•</span>
-      <b>14,654</b> transactions traced
+      <b data-metric="transactions">—</b> transactions traced
       <span class="sep">•</span>
-      <b>30/30</b> top-ranked chains genuinely fraudulent
+      <b data-metric="clean-prefix">—</b> top-ranked chains genuinely fraudulent
     </div>
   </header>
 
@@ -90,10 +91,10 @@
       </div>
       <div class="preview-body">
         <div class="preview-stats">
-          <div class="preview-stat"><i>Active chains</i><b>39</b><div class="bar blue"><span style="width:78%"></span></div></div>
-          <div class="preview-stat"><i>Recoverable</i><b>₹41.2L</b><div class="bar"><span style="width:62%"></span></div></div>
-          <div class="preview-stat"><i>Median trace</i><b>2.4 min</b><div class="bar amber"><span style="width:34%"></span></div></div>
-          <div class="preview-stat"><i>Accounts flagged</i><b>183</b><div class="bar red"><span style="width:47%"></span></div></div>
+          <div class="preview-stat"><i>Active chains</i><b data-metric="active-chains">—</b><div class="bar blue"><span data-bar="active-chains" style="width:4%"></span></div></div>
+          <div class="preview-stat"><i>Recoverable</i><b data-metric="recoverable">—</b><div class="bar"><span data-bar="recoverable" style="width:4%"></span></div></div>
+          <div class="preview-stat"><i>Median trace</i><b data-metric="median-duration">—</b><div class="bar amber"><span data-bar="median-duration" style="width:4%"></span></div></div>
+          <div class="preview-stat"><i>Accounts flagged</i><b data-metric="accounts-flagged">—</b><div class="bar red"><span data-bar="accounts-flagged" style="width:4%"></span></div></div>
         </div>
         <div class="preview-split">
           <div class="preview-graph">
@@ -214,21 +215,24 @@
          with known ground truth — re-runnable live.</p>
     </div>
     <div class="metric-strip">
-      <div class="metric"><b>100%</b><span>End-node accuracy on complaint-triggered traces</span></div>
-      <div class="metric"><b>100%</b><span>Of chains surfaced with no complaint filed</span></div>
-      <div class="metric"><b>30/30</b><span>Top-ranked chains genuinely fraudulent, before any false alarm</span></div>
-      <div class="metric"><b>0.918</b><span>Mule classifier ROC AUC, against a 0.853 baseline</span></div>
+      <div class="metric"><b data-metric="end-node-accuracy">—</b><span>End-node accuracy on complaint-triggered traces</span></div>
+      <div class="metric"><b data-metric="scan-recall">—</b><span>Of chains surfaced with no complaint filed</span></div>
+      <div class="metric"><b data-metric="clean-prefix">—</b><span>Top-ranked chains genuinely fraudulent, before any false alarm</span></div>
+      <div class="metric"><b data-metric="roc-auc">—</b><span data-metric-note="baseline">Mule classifier ROC AUC</span></div>
     </div>
     <div style="margin-top:16px">
       <div class="note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/>
         </svg>
-        <div>Numbers come from a <b>synthetic</b> dataset with injected chains — real UPI transaction
-        data is not accessible outside NPCI and partner banks. The chain walk is deterministic and
-        transfers directly; the classifier is a ranking aid trained on synthetic behaviour and would
-        need retraining on real data. Thresholds are swept rather than tuned to flatter the result:
-        over-tightening the walk drops accuracy to 8.9%, over-loosening it to 88.9%.</div>
+        <div>Every figure on this page is read live from the running service against the dataset
+        currently loaded — nothing here is written into the page. Numbers come from a
+        <b>synthetic</b> dataset with injected chains, since real UPI transaction data is not
+        accessible outside NPCI and partner banks. The chain walk is deterministic and transfers
+        directly; the classifier is a ranking aid trained on synthetic behaviour and would need
+        retraining on real data. Thresholds are swept rather than tuned to flatter the result:
+        <span data-metric-note="sensitivity">over-tightening and over-loosening the walk both cost
+        accuracy</span>.</div>
       </div>
     </div>
   </section>
@@ -264,6 +268,73 @@
 </div>
 
 <script src="/assets/globe.js"></script>
+<script>
+/* Live figures.
+   Nothing numeric on this page is written into the markup - it is all read from
+   the running service, so regenerating the dataset moves the landing page too
+   rather than leaving it quoting a number that is no longer true. */
+(async function () {
+  const set = (name, value) =>
+    document.querySelectorAll(`[data-metric="${name}"]`).forEach(el => { el.textContent = value; });
+  const bar = (name, pct) =>
+    document.querySelectorAll(`[data-bar="${name}"]`).forEach(el => {
+      el.style.width = Math.max(4, Math.min(100, pct)).toFixed(0) + '%';
+    });
+
+  const inr = (n) => n >= 1e7 ? '₹' + (n / 1e7).toFixed(1) + ' Cr'
+                   : n >= 1e5 ? '₹' + (n / 1e5).toFixed(1) + ' L'
+                   : '₹' + Math.round(n).toLocaleString('en-IN');
+  const mins = (m) => m < 60 ? m.toFixed(0) + ' min'
+                    : m < 1440 ? (m / 60).toFixed(1) + ' h'
+                    : (m / 1440).toFixed(1) + ' d';
+  const pct = (x) => (x * 100).toFixed(x >= 0.999 ? 0 : 1) + '%';
+
+  try {
+    const o = await fetch('/api/overview').then(r => r.json());
+    set('transactions', o.transactions.toLocaleString('en-IN'));
+    set('accounts', o.accounts.toLocaleString('en-IN'));
+    set('active-chains', o.active_chains);
+    set('recoverable', inr(o.funds_recoverable));
+    set('median-duration', mins(o.median_chain_minutes));
+    set('accounts-flagged', o.accounts_flagged);
+    set('roc-auc', o.model.roc_auc.toFixed(3));
+
+    const note = document.querySelector('[data-metric-note="baseline"]');
+    if (note) note.textContent =
+      `Mule classifier ROC AUC, against a ${o.baseline.roc_auc.toFixed(3)} baseline`;
+
+    const total = o.funds_recoverable + o.funds_lost || 1;
+    bar('active-chains', o.active_chains / Math.max(o.active_chains, 40) * 100);
+    bar('recoverable', o.funds_recoverable / total * 100);
+    bar('median-duration', Math.min(100, o.median_chain_minutes / 240 * 100));
+    bar('accounts-flagged', o.accounts_flagged / Math.max(o.accounts, 1) * 100);
+  } catch (e) {
+    /* the service is not up - the em-dash placeholders stay, which is honest */
+  }
+
+  try {
+    const ev = await fetch('/api/evaluation').then(r => r.json());
+    set('end-node-accuracy', pct(ev.chain_walk.end_node_accuracy));
+    set('scan-recall', pct(ev.proactive_scan.recall_vs_injected));
+    set('injected-chains', ev.dataset.injected_chains);
+
+    // consecutive genuine chains from the top of the queue; can exceed the
+    // injected count because two entry points may reach the same chain
+    set('clean-prefix', ev.proactive_scan.clean_prefix);
+
+    const sweep = ev.sensitivity;
+    const tight = sweep[0], loose = sweep[sweep.length - 1];
+    const note = document.querySelector('[data-metric-note="sensitivity"]');
+    if (note && tight && loose) {
+      note.textContent =
+        `over-tightening the walk drops accuracy to ${pct(tight.end_node_accuracy)}, ` +
+        `over-loosening it to ${pct(loose.end_node_accuracy)}`;
+    }
+  } catch (e) {
+    /* no ground truth for this dataset - placeholders stay */
+  }
+})();
+</script>
 <script>
 /* Section-aware nav indicator.
    The pill follows whichever section is actually in view, so it tracks free

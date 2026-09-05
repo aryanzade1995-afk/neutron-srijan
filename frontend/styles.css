@@ -193,6 +193,14 @@ body::after {
   display: grid; place-items: center;
 }
 .icon-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.icon-btn:disabled { opacity: .5; cursor: default; }
+.icon-btn.busy svg { animation: spin .9s linear infinite; }
+/* the dataset on disk no longer matches what is loaded - reload to catch up */
+.icon-btn.attention {
+  color: var(--amber);
+  border-color: rgba(201, 154, 78, 0.5);
+  background: rgba(201, 154, 78, 0.12);
+}
 .avatar {
   width: 34px; height: 34px; border-radius: 50%;
   background: var(--surface-3);

@@ -42,6 +42,16 @@ async function get(path) {
   return res.json();
 }
 
+async function post(path, body) {
+  const res = await fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  return res.json();
+}
+
 // ---------- stat cards ----------
 
 function renderStats() {
@@ -51,7 +61,8 @@ function renderStats() {
   const cards = [
     {
       label: 'Active chains', value: o.active_chains,
-      sub: `${o.freezable_chains} still freezable · ${o.cashed_out_chains} cashed out`,
+      sub: `${o.freezable_chains} still freezable · ${o.cashed_out_chains} cashed out`
+         + (o.dismissed_chains ? ` · ${o.dismissed_chains} dismissed` : ''),
       pct: Math.min(100, o.active_chains / 60 * 100), bar: 'blue',
       pips: [['#4f8f86', 'C'], ['#3d6f68', 'H'], ['#c99a4e', 'M']],
     },
@@ -69,7 +80,8 @@ function renderStats() {
     },
     {
       label: 'Accounts flagged', value: o.accounts_flagged,
-      sub: `of ${o.accounts.toLocaleString('en-IN')} on the network`,
+      sub: `of ${o.accounts.toLocaleString('en-IN')} on the network`
+         + ` · ${o.transactions.toLocaleString('en-IN')} transactions`,
       pct: o.accounts_flagged / o.accounts * 100, bar: 'red',
       pips: [['#bf5f66', '!']],
     },
@@ -279,7 +291,7 @@ async function showAccount(id) {
 
 // ---------- model ----------
 
-function renderModel() {
+async function renderModel() {
   const m = state.overview.model, b = state.overview.baseline;
   $('model-metrics').innerHTML = `
     <div class="kv"><span>Algorithm</span><span>${m.algorithm}</span></div>
@@ -299,6 +311,29 @@ function renderModel() {
       </div>
       <div class="bar blue"><span style="width:${(f.importance / max * 100).toFixed(0)}%"></span></div>
     </div>`).join('');
+
+  // validation figures for the dataset currently loaded, computed on demand
+  const box = $('model-validation');
+  box.innerHTML = '<div class="empty">Evaluating current dataset…</div>';
+  try {
+    const ev = await get('/api/evaluation');
+    const w = ev.chain_walk, s = ev.proactive_scan;
+    box.innerHTML = `
+      <div class="kv"><span>Chains in dataset</span><span>${ev.dataset.injected_chains}</span></div>
+      <div class="kv"><span>End-node accuracy</span><span>${(w.end_node_accuracy * 100).toFixed(1)}%</span></div>
+      <div class="kv"><span>Full-path recovery</span><span>${(w.full_path_recovery * 100).toFixed(1)}%</span></div>
+      <div class="kv"><span>Scan recall</span><span>${(s.recall_vs_injected * 100).toFixed(1)}%</span></div>
+      <div class="kv"><span>Precision @10 / @20</span><span>${(s.precision_at_10 * 100).toFixed(0)}% / ${(s.precision_at_20 * 100).toFixed(0)}%</span></div>
+      <div class="kv"><span>Precision, whole set</span><span>${(s.precision * 100).toFixed(1)}%</span></div>
+      <div style="margin-top:14px;font-size:11px;color:var(--muted-2);font-weight:600;letter-spacing:.05em">
+        WALK SENSITIVITY
+      </div>
+      ${ev.sensitivity.map(r => `
+        <div class="kv"><span>${r.setting}</span><span>${(r.end_node_accuracy * 100).toFixed(1)}%</span></div>
+      `).join('')}`;
+  } catch (e) {
+    box.innerHTML = `<div class="empty">Evaluation unavailable — ${e.message}</div>`;
+  }
 }
 
 // ---------- complaints ----------
@@ -360,15 +395,44 @@ function switchView(name) {
 
 // ---------- boot ----------
 
-async function boot() {
+/* Every figure on screen is derived from the API on each refresh - nothing is
+   cached across a data change, so regenerating the dataset moves all of it. */
+async function refresh({ retrace = false } = {}) {
   state.overview = await get('/api/overview');
   renderStats();
 
   const { chains } = await get('/api/chains?limit=40');
   state.chains = chains;
+  state.index = 0;
   renderChains();
 
-  if (chains.length) await runTrace(chains[0].entry_txn_id);
+  const stale = state.overview.data_stale;
+  $('btn-rescan').classList.toggle('attention', !!stale);
+  $('btn-rescan').title = stale
+    ? 'Dataset on disk has changed — click to reload'
+    : 'Reload data and re-run the proactive scan';
+
+  if (retrace) {
+    const stillThere = state.trace && chains.some(c => c.entry_txn_id === state.trace.entry_txn_id);
+    if (stillThere) await runTrace(state.trace.entry_txn_id);
+    else if (chains.length) await runTrace(chains[0].entry_txn_id);
+    else clearTrace();
+  }
+  return state.overview;
+}
+
+function clearTrace() {
+  state.trace = null;
+  $('crumb-chain').textContent = '—';
+  $('endnode-vpa').textContent = '—';
+  $('endnode-sub').textContent = 'No chains in the queue';
+  $('endnode-chips').innerHTML = '';
+  $('timeline').innerHTML = '<div class="empty">No trace loaded.</div>';
+  if (state.network) { state.network.destroy(); state.network = null; }
+}
+
+async function boot() {
+  await refresh({ retrace: true });
   $('loading').remove();
 }
 
@@ -424,9 +488,7 @@ $('btn-freeze').addEventListener('click', async () => {
 
   try {
     const body = await recordVerdict('confirmed_fraud', 'freeze requested from console');
-    const { chains } = await get('/api/chains?limit=40');
-    state.chains = chains;
-    renderChains();
+    await refresh();
     alert(`Freeze request logged for ${t.end_node}.\n\n` +
           `${body.chains_reviewed} chain(s) reviewed so far — confirmed cases feed the next retrain.`);
   } catch (e) {
@@ -439,19 +501,32 @@ $('btn-dismiss').addEventListener('click', async () => {
   if (!confirm('Dismiss this chain as a false positive? It will drop out of the queue.')) return;
   try {
     await recordVerdict('false_positive', 'dismissed from console');
-    const { chains } = await get('/api/chains?limit=40');
-    state.chains = chains;
-    renderChains();
-    if (state.chains.length) runTrace(state.chains[0].entry_txn_id);
+    await refresh({ retrace: true });
   } catch (e) {
     alert(`Could not record the verdict — ${e.message}`);
   }
 });
 
+/* Reloads the dataset if it changed on disk, then re-runs the scan. This is the
+   one control that brings the whole console back in line with the data. */
 $('btn-rescan').addEventListener('click', async () => {
-  const { chains } = await get('/api/chains?limit=40');
-  state.chains = chains;
-  renderChains();
+  const btn = $('btn-rescan');
+  btn.disabled = true;
+  btn.classList.add('busy');
+  try {
+    const reload = await post('/api/reload');
+    if (!reload.reloaded) await post('/api/rescan');
+    const o = await refresh({ retrace: true });
+    if (reload.reloaded) {
+      alert(`Dataset reloaded.\n\n${o.transactions.toLocaleString('en-IN')} transactions · ` +
+            `${o.accounts.toLocaleString('en-IN')} accounts · ${o.active_chains} chains in the queue.`);
+    }
+  } catch (e) {
+    alert(`Reload failed — ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('busy');
+  }
 });
 
 $('btn-trace').addEventListener('click', () => {

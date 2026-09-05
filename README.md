@@ -126,6 +126,25 @@ docs/
 | `GET /api/feedback` | Verdict log and review counts. |
 | `GET /api/feedback/labels` | Accumulated supervision available to the next retrain. |
 | `POST /api/rescan` | Re-run the proactive scan and refresh the queue. |
+| `POST /api/reload` | Rebuild graph, model and scan from the dataset on disk. `force=true` to rebuild regardless. |
+| `GET /api/evaluation` | Validation figures recomputed for the loaded dataset. |
+| `GET /api/health` | Liveness, current counts, and whether the data on disk has changed. |
+
+## Live figures — nothing is hardcoded
+
+Every number on the landing page and in the console is read from the running service against the dataset currently in memory. There are no figures written into the markup, so changing the data changes the whole product.
+
+Regenerate the dataset with any parameters you like while the server is running:
+
+```bash
+.venv/Scripts/python.exe backend/generate_data.py --chains 70 --txns 20000 --seed 99
+```
+
+The service fingerprints the CSVs on every request, so it notices immediately. The refresh control in the console header turns amber, and clicking it reloads the graph, refits the model, re-runs the scan and re-renders every figure — no restart. `POST /api/reload` does the same thing from the command line.
+
+Validation figures follow too: `GET /api/evaluation` recomputes the chain-walk accuracy, scan precision and the sensitivity sweep against whatever is loaded, and is invalidated whenever the data or the scan changes. The Model tab in the console shows those live rather than reading `data/evaluation.json`.
+
+The dashboard counts and the chain table are derived from one `visible_chains()` definition, so they cannot drift apart — dismissing a chain decrements the stat card and removes the row in the same step.
 
 ## Feedback loop
 
@@ -139,7 +158,7 @@ A confirmed chain marks its end node as a positive label and a dismissed one as 
 .venv/Scripts/python.exe -m pytest
 ```
 
-31 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts and the feedback loop.
+35 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts, the feedback loop, and that the dashboard counts can never disagree with the chain table.
 
 ## Honest scope
 
