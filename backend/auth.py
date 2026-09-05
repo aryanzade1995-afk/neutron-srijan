@@ -29,7 +29,9 @@ import time
 
 from store import STORE
 
-AUTH_ENABLED = os.environ.get("MULETRACE_AUTH", "on").lower() not in ("off", "0", "false")
+# Off by default so a demo cannot hit a login wall because the server happened to
+# be started a different way. Turn it on explicitly with MULETRACE_AUTH=on.
+AUTH_ENABLED = os.environ.get("MULETRACE_AUTH", "off").lower() in ("on", "1", "true")
 
 SESSION_TTL = int(os.environ.get("MULETRACE_SESSION_TTL", 60 * 60 * 8))   # one shift
 CHALLENGE_TTL = 180             # time to enter the code after the password

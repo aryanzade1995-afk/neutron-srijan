@@ -16,8 +16,13 @@ def client(tmp_path_factory):
     import workspace as workspace_module
 
     workspace_module.FEEDBACK_DIR = tmp_path_factory.mktemp("feedback")
+
+    # the gate ships off so a demo is not blocked; this suite is what proves it
+    # works, so turn it on for the duration
+    previous, auth.AUTH_ENABLED = auth.AUTH_ENABLED, True
     with TestClient(app_module.app) as test_client:
         yield test_client
+    auth.AUTH_ENABLED = previous
 
 
 @pytest.fixture

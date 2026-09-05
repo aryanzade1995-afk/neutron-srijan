@@ -158,6 +158,48 @@ The dashboard counts and the chain table both come from one `visible_chains()` d
 
 `backend/generate_data.py` still writes a dataset to `data/` for reproducible offline evaluation via `backend/evaluate.py`; the served app does not read those files.
 
+## Access control
+
+The console carries case data — victim VPAs, account ages, freeze
+recommendations — so it supports password + TOTP (RFC 6238) multi-factor sign-in,
+enforced by one middleware in front of every data route rather than per-route
+checks.
+
+**It ships off**, so a demo cannot hit a login wall because the server was
+started a different way:
+
+```bash
+MULETRACE_AUTH=on .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
+```
+
+With it on, the server prints a username, password and TOTP key once on first
+boot. `/login` walks two steps — credentials, then the six-digit code — and shows
+a QR for enrolment. The first factor only issues a 180-second challenge; only the
+second mints a session. Challenges are single-use, failed attempts throttle at
+five per five minutes, and the enrolment secret is returned exactly once.
+
+Passwords are scrypt with a per-user salt. TOTP is implemented on the standard
+library rather than adding a dependency.
+
+## Store
+
+`backend/store.py` wraps Redis and holds three things:
+
+- **Datasets** — a generated network is serialised once and reused, so a seed
+  that has been built before is not regenerated.
+- **Detection patterns** — ranked chains in a sorted set keyed by risk score,
+  per-account mule scores in a hash, so "worst chains right now" and "score this
+  account" are a single command instead of a rescan.
+- **Auth state** — sessions and pending challenges, expiring on their own TTLs.
+
+The detection itself stays in the temporal chain walk and the classifier. Redis
+stores and serves what they found; it does not do the recognising.
+
+If no Redis answers, an in-process backend with the same interface takes over so
+the console still runs. Which one is live is reported on `/api/health` and
+`/api/auth/status`, and the login page says so — a silent fallback would be worse
+than none. Point `MULETRACE_REDIS_URL` at a server to switch, no code change.
+
 ## Feedback loop
 
 Closed cases are the only route to labels that are not synthetic, so they are captured as first-class data. `POST /api/feedback` writes an append-only JSON Lines log (`data/feedback.jsonl`), replayed into memory at boot. Append-only because a freeze decision is an audit trail: a verdict is superseded by a later entry, never edited in place.
@@ -170,7 +212,7 @@ A confirmed chain marks its end node as a positive label and a dismissed one as 
 .venv/Scripts/python.exe -m pytest
 ```
 
-37 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts, the feedback loop, that the dashboard counts can never disagree with the chain table, and that a pinned seed is reproducible while different seeds give different networks.
+54 tests. `tests/test_chain_walk.py` pins each hop-admission rule on small hand-built graphs — causal ordering, the time window, the forward-percentage floor and ceiling, split detection, cycle and hop guards, cash-out termination — because these are the decisions a bank would have to justify. `tests/test_api.py` boots the app through its lifespan hook and covers the endpoint contracts, the feedback loop, that the dashboard counts can never disagree with the chain table, and that a pinned seed is reproducible while different seeds give different networks.
 
 ## Honest scope
 

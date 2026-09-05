@@ -67,7 +67,10 @@ def _new_session(response: Response) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    seeded = auth.ensure_demo_user()
+    seeded = auth.ensure_demo_user() if auth.AUTH_ENABLED else None
+    if not auth.AUTH_ENABLED:
+        print("[auth] Authentication is OFF - every route is open. "
+              "Set MULETRACE_AUTH=on to require password + TOTP.")
     if seeded:
         username, password, secret = seeded
         print("\n" + "=" * 72)
