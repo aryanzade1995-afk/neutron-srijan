@@ -36,14 +36,23 @@ const when = (iso) => {
 
 const bandColor = (b) => ({ critical: '#bf5f66', high: '#c9834e', medium: '#c99a4e', low: '#6aa88f' }[b] || '#8ea39e');
 
+/* A seed on the page URL pins the dataset, so it has to travel with every API
+   call the page makes - otherwise the page is pinned and its data is not. */
+const PINNED_SEED = new URLSearchParams(location.search).get('seed');
+
+function url(path) {
+  if (!PINNED_SEED) return API + path;
+  return API + path + (path.includes('?') ? '&' : '?') + 'seed=' + encodeURIComponent(PINNED_SEED);
+}
+
 async function get(path) {
-  const res = await fetch(API + path);
+  const res = await fetch(url(path));
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
   return res.json();
 }
 
 async function post(path, body) {
-  const res = await fetch(API + path, {
+  const res = await fetch(url(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -515,6 +524,13 @@ $('btn-rescan').addEventListener('click', async () => {
   btn.disabled = true;
   btn.classList.add('busy');
   try {
+    if (PINNED_SEED) {
+      await post('/api/rescan');
+      await refresh({ retrace: true });
+      alert(`This session is pinned to seed ${PINNED_SEED}, so the dataset stays fixed.\n\n` +
+            `Drop ?seed= from the URL to get a new network on each load.`);
+      return;
+    }
     const fresh = await post('/api/reload');
     const o = await refresh({ retrace: true });
     alert(`New dataset generated: ${fresh.dataset}\n\n` +

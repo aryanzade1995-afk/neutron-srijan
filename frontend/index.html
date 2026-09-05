@@ -289,8 +289,12 @@
                     : (m / 1440).toFixed(1) + ' d';
   const pct = (x) => (x * 100).toFixed(x >= 0.999 ? 0 : 1) + '%';
 
+  // a pinned seed on the page URL must travel with the API calls too
+  const seed = new URLSearchParams(location.search).get('seed');
+  const api = (p) => seed ? `${p}?seed=${encodeURIComponent(seed)}` : p;
+
   try {
-    const o = await fetch('/api/overview').then(r => r.json());
+    const o = await fetch(api('/api/overview')).then(r => r.json());
     set('transactions', o.transactions.toLocaleString('en-IN'));
     set('accounts', o.accounts.toLocaleString('en-IN'));
     set('active-chains', o.active_chains);
@@ -313,7 +317,7 @@
   }
 
   try {
-    const ev = await fetch('/api/evaluation').then(r => r.json());
+    const ev = await fetch(api('/api/evaluation')).then(r => r.json());
     set('end-node-accuracy', pct(ev.chain_walk.end_node_accuracy));
     set('scan-recall', pct(ev.proactive_scan.recall_vs_injected));
     set('injected-chains', ev.dataset.injected_chains);

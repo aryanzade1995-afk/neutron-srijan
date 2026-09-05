@@ -147,10 +147,10 @@ Nothing on the site is hardcoded, and no two visitors see the same network. Each
 
 Scale varies with the seed, not just contents — otherwise every dashboard would still show roughly the same totals and read as canned. The dataset id is shown in the console header so two people can see immediately that they are on different data.
 
-A dataset is **stable for the length of a session**: refreshing mid-investigation must not reshuffle the case you are looking at. Building one costs about 1.5 s, so they are made on demand and held in a 12-entry LRU cache.
+**Every page load hands out a new dataset**, so opening or refreshing the site shows a different network. The session cookie then keeps that dataset fixed for all the API calls the page makes, so tracing, dismissing and rescanning never shift the data underneath you - only a reload moves to new data. Building one costs about 1.5 s, so they are made on demand and held in a 12-entry LRU cache.
 
-- **New dataset on demand** — the refresh control in the console header issues a fresh session and rebuilds everything. `POST /api/reload` does the same over HTTP.
-- **Pin a dataset** — append `?seed=26` to any endpoint or page to reproduce an exact dataset. Useful when the numbers need to match a slide, or when two people want to look at the same case.
+- **New dataset** — reload the page, or use the refresh control in the console header. `POST /api/reload` does the same over HTTP.
+- **Pin a dataset** — append `?seed=26` to any page or endpoint and it stays fixed across reloads. Useful when the numbers need to match a slide, or when two people want to look at the same case. The page forwards the seed to every call it makes.
 
 Validation figures follow the session's data too: `GET /api/evaluation` recomputes chain-walk accuracy, scan precision and the sensitivity sweep for that workspace, so the Model tab is never quoting another dataset's results. Expect them to move between sessions — a harder draw might give 96.1% end-node accuracy where an easier one gives 100%, and that variation is the honest picture.
 

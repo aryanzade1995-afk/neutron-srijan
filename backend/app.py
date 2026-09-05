@@ -342,16 +342,36 @@ def feedback_labels(request: Request, response: Response) -> dict:
     }
 
 
+def _serve_page(path: Path, request: Request) -> FileResponse:
+    """Serve a page and start a new session on it.
+
+    Every page load hands out a fresh dataset, so opening or reloading the site
+    shows a different network. The cookie then keeps that dataset stable for all
+    the API calls the page makes, so working a case does not shift underneath
+    you - only a reload moves to new data.
+
+    `?seed=` opts out and pins a dataset, for reproducing exact numbers.
+    """
+    response = FileResponse(path)
+    # the page must actually reach the server on reload, or it would keep
+    # replaying a cached copy and never pick up a new session
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
+    if "seed" not in request.query_params:
+        response.set_cookie(SESSION_COOKIE, secrets.token_urlsafe(12),
+                            max_age=60 * 60 * 24 * 7, httponly=True, samesite="lax")
+    return response
+
+
 if FRONTEND.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND), name="assets")
 
     @app.get("/")
-    def index() -> FileResponse:
-        return FileResponse(FRONTEND / "index.html")
+    def index(request: Request) -> FileResponse:
+        return _serve_page(FRONTEND / "index.html", request)
 
     @app.get("/console")
-    def console() -> FileResponse:
+    def console(request: Request) -> FileResponse:
         target = FRONTEND / "console.html"
         if not target.exists():
             raise HTTPException(404, "console not built yet")
-        return FileResponse(target)
+        return _serve_page(target, request)
