@@ -1,27 +1,26 @@
 """MuleTrace API - chain tracing, mule scoring, and the investigator dashboard."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from feedback import FeedbackStore, Verdict
 from graph_engine import DATA_DIR, WalkParams, load_graph
 from risk_model import RiskModel, build_features
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 
-app = FastAPI(title="MuleTrace", version="0.1.0",
-              description="Mule-account transaction chain detection for UPI/NPCI")
-
 STATE: dict = {}
 
 
-@app.on_event("startup")
 def bootstrap() -> None:
+    """Build the graph, score every account, and pre-run the proactive scan."""
     graph = load_graph()
     features = build_features(graph)
     model = RiskModel()
@@ -35,7 +34,32 @@ def bootstrap() -> None:
     STATE["features"] = features
     STATE["report"] = report
     STATE["truth"] = truth
-    STATE["chains"] = graph.scan(WalkParams(), min_hops=3, limit=60, risk_lookup=model.score)
+    STATE["feedback"] = FeedbackStore(DATA_DIR / "feedback.jsonl")
+    rescan()
+
+
+def rescan() -> list[dict]:
+    """Re-run the scan and cache the decorated result.
+
+    Decorating attaches per-node metadata and scores; doing it once here keeps
+    /api/chains from repeating that work on every request.
+    """
+    graph, model = STATE["graph"], STATE["model"]
+    chains = graph.scan(WalkParams(), min_hops=3, limit=60, risk_lookup=model.score)
+    STATE["chains"] = [_decorate(c) for c in chains]
+    return STATE["chains"]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    bootstrap()
+    yield
+    STATE.clear()
+
+
+app = FastAPI(title="MuleTrace", version="0.2.0",
+              description="Mule-account transaction chain detection for UPI/NPCI",
+              lifespan=lifespan)
 
 
 def _params(min_forward_pct: float, max_gap_hours: float, max_hops: int) -> WalkParams:
@@ -74,6 +98,10 @@ def _decorate(trace: dict) -> dict:
     trace["nodes"] = nodes
     trace.setdefault("risk", graph.score_chain(trace, model.score))
     trace["freeze_recommended"] = trace["recoverable"] and trace["risk"]["score"] >= 35
+
+    store: FeedbackStore | None = STATE.get("feedback")
+    recorded = store.for_chain(trace["entry_txn_id"]) if store else None
+    trace["review"] = recorded.as_dict() if recorded else None
     return trace
 
 
@@ -107,11 +135,23 @@ def overview() -> dict:
 
 
 @app.get("/api/chains")
-def chains(limit: int = 25, band: str | None = None) -> dict:
+def chains(limit: int = 25, band: str | None = None,
+           include_dismissed: bool = False) -> dict:
     items = STATE["chains"]
     if band:
         items = [c for c in items if c["risk"]["band"] == band]
-    return {"count": len(items), "chains": [_decorate(c) for c in items[:limit]]}
+    if not include_dismissed:
+        # a chain an investigator has already dismissed should not keep returning
+        # to the top of their queue
+        items = [c for c in items
+                 if not (c.get("review") or {}).get("verdict") == "false_positive"]
+    return {"count": len(items), "chains": items[:limit]}
+
+
+@app.post("/api/rescan")
+def trigger_rescan() -> dict:
+    chains = rescan()
+    return {"chains": len(chains)}
 
 
 @app.get("/api/trace/{txn_id}")
@@ -189,9 +229,62 @@ def search(q: str, limit: int = 10) -> dict:
         return {"transactions": [], "accounts": []}
     txns = [{"txn_id": t["txn_id"], "sender": t["sender"], "receiver": t["receiver"],
              "amount": t["amount"], "timestamp": t["timestamp"]}
-            for tid, t in graph._by_id.items() if q in tid.lower()][:limit]
+            for t in graph.find_transactions(q, limit)]
     accounts = [a for a in graph.accounts.index if q in a.lower()][:limit]
     return {"transactions": txns, "accounts": accounts}
+
+
+# ---------- investigator feedback ----------
+
+@app.get("/api/feedback")
+def list_feedback() -> dict:
+    store: FeedbackStore = STATE["feedback"]
+    return {**store.summary(), "reviews": store.all()}
+
+
+@app.post("/api/feedback", status_code=201)
+def record_feedback(
+    entry_txn_id: str = Body(..., embed=True),
+    verdict: str = Body(..., embed=True),
+    note: str = Body("", embed=True),
+    reviewer: str = Body("unattributed", embed=True),
+) -> dict:
+    """Log a closed case. Confirmed chains become labels for the next retrain."""
+    graph, store = STATE["graph"], STATE["feedback"]
+    if graph.txn(entry_txn_id) is None:
+        raise HTTPException(404, f"transaction {entry_txn_id} not found")
+
+    walk = graph.chain_walk(entry_txn_id, WalkParams())
+    try:
+        recorded = store.record(Verdict(
+            entry_txn_id=entry_txn_id,
+            end_node=walk["end_node"],
+            verdict=verdict,
+            note=note,
+            reviewer=reviewer,
+        ))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+    # reflect the verdict on the cached queue without a full rescan
+    for chain in STATE["chains"]:
+        if chain["entry_txn_id"] == entry_txn_id:
+            chain["review"] = recorded.as_dict()
+
+    return {"recorded": recorded.as_dict(), **store.summary()}
+
+
+@app.get("/api/feedback/labels")
+def feedback_labels() -> dict:
+    """Accumulated supervision available to a retrain."""
+    store: FeedbackStore = STATE["feedback"]
+    labels = store.training_labels()
+    return {
+        "labelled_accounts": len(labels),
+        "positives": sum(1 for v in labels.values() if v == 1),
+        "negatives": sum(1 for v in labels.values() if v == 0),
+        "labels": labels,
+    }
 
 
 if FRONTEND.exists():

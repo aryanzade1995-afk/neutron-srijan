@@ -71,6 +71,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
       Next chain
     </button>
+    <button class="btn" id="btn-dismiss" title="Record as a false positive">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      Dismiss
+    </button>
     <button class="btn btn-primary" id="btn-freeze">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10"/></svg>
       Raise freeze request
@@ -227,10 +231,12 @@
     </div>
     <div style="margin-top:14px" class="note">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
-      <div><b>Read these as a wiring check, not a performance claim.</b> The data is synthetic, and
-        mule accounts are generated young, so <b>account age</b> separates the classes almost perfectly —
-        real mule accounts are recruited from ordinary aged accounts and will not. The chain walk is the
-        part that transfers to real data; the scorer would need retraining on NPCI's graph.</div>
+      <div><b>These are ranking figures on synthetic behaviour, not a performance claim.</b>
+        Mule accounts here are recruited the way real rings recruit them — 35% freshly opened,
+        50% existing accounts turned, 15% dormant accounts reactivated — so account age does not
+        give the model a free answer, and the scores are correspondingly modest. The chain walk is
+        the deterministic part that transfers to real data; this scorer only orders the queue, and
+        would need retraining on NPCI's own graph using the verdicts captured under Feedback.</div>
     </div>
   </div>
 

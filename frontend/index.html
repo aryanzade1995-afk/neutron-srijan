@@ -70,9 +70,9 @@
     <div class="hero-proof">
       <b>100%</b> end-node accuracy on 45 reconstructed chains
       <span class="sep">•</span>
-      <b>14,611</b> transactions traced
+      <b>14,654</b> transactions traced
       <span class="sep">•</span>
-      <b>97.4%</b> proactive scan precision
+      <b>30/30</b> top-ranked chains genuinely fraudulent
     </div>
   </header>
 
@@ -215,18 +215,20 @@
     </div>
     <div class="metric-strip">
       <div class="metric"><b>100%</b><span>End-node accuracy on complaint-triggered traces</span></div>
-      <div class="metric"><b>82%</b><span>Of injected chains surfaced with no complaint filed</span></div>
-      <div class="metric"><b>95%</b><span>Precision on the proactive scan</span></div>
-      <div class="metric"><b>10/10</b><span>Top-ranked chains that were genuinely fraudulent</span></div>
+      <div class="metric"><b>100%</b><span>Of chains surfaced with no complaint filed</span></div>
+      <div class="metric"><b>30/30</b><span>Top-ranked chains genuinely fraudulent, before any false alarm</span></div>
+      <div class="metric"><b>0.918</b><span>Mule classifier ROC AUC, against a 0.853 baseline</span></div>
     </div>
     <div style="margin-top:16px">
       <div class="note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/>
         </svg>
-        <div>Numbers come from a <b>synthetic</b> dataset with injected chains — real UPI transaction data
-        is not accessible outside NPCI and partner banks. They demonstrate that the traversal and scoring
-        work as specified; they are not real-world precision and recall, and the pitch says so openly.</div>
+        <div>Numbers come from a <b>synthetic</b> dataset with injected chains — real UPI transaction
+        data is not accessible outside NPCI and partner banks. The chain walk is deterministic and
+        transfers directly; the classifier is a ranking aid trained on synthetic behaviour and would
+        need retraining on real data. Thresholds are swept rather than tuned to flatter the result:
+        over-tightening the walk drops accuracy to 8.9%, over-loosening it to 88.9%.</div>
       </div>
     </div>
   </section>

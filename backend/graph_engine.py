@@ -105,6 +105,19 @@ class TransactionGraph:
     def txn(self, txn_id: str) -> dict | None:
         return self._by_id.get(txn_id)
 
+    def find_transactions(self, query: str, limit: int = 10) -> list[dict]:
+        """Transactions whose id contains `query`, case-insensitively."""
+        query = query.strip().lower()
+        if not query:
+            return []
+        found = []
+        for txn_id, edge in self._by_id.items():
+            if query in txn_id.lower():
+                found.append(edge)
+                if len(found) >= limit:
+                    break
+        return found
+
     def outgoing(self, account: str) -> list[dict]:
         return self._out.get(account, [])
 
@@ -183,7 +196,9 @@ class TransactionGraph:
         reason = "no_qualifying_hop"
         splits_seen = 0
 
-        while len(hops) <= params.max_hops:
+        # hops already holds the entry transfer, so the bound is exclusive: the
+        # walk yields at most max_hops transfers in total
+        while len(hops) < params.max_hops:
             if self.is_cashout(current, hops[-1].mode):
                 reason = "cash_out"
                 break
@@ -236,7 +251,9 @@ class TransactionGraph:
             "end_node": current,
             "end_reason": reason,
             "recoverable": reason != "cash_out",
-            "hop_count": len(hops) - 1,
+            # number of transfers the money made, entry transaction included, so it
+            # always equals len(path) - 1 and matches how an investigator counts hops
+            "hop_count": len(hops),
             "amount_in": round(entry["amount"], 2),
             "amount_at_end": round(amount, 2),
             "leakage_pct": round(1 - (amount / entry["amount"]), 4) if entry["amount"] else 0.0,

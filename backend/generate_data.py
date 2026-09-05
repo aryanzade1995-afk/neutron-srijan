@@ -34,6 +34,8 @@ class Generator:
         self.accounts: dict[str, dict] = {}
         self.txns: list[dict] = []
         self._txn_seq = 0
+        # outgoing count per account, so "dormant" recruits can be picked cheaply
+        self._out_index: dict[str, list[int]] = {}
         self.window_end = datetime(2026, 9, 5, 18, 0, tzinfo=timezone.utc)
         self.window_start = self.window_end - timedelta(days=30)
 
@@ -51,6 +53,7 @@ class Generator:
                 "account_age_days": rng.randint(4, 95),
                 "kyc_tier": rng.choice([1, 1, 1, 2]),
                 "account_type": "mule",
+                "mule_archetype": "fresh",
                 "is_mule": 1,
             }
         elif kind in ("merchant", "cashout"):
@@ -92,6 +95,7 @@ class Generator:
             "is_fraud": is_fraud,
         }
         self.txns.append(txn)
+        self._out_index.setdefault(sender, []).append(self._txn_seq)
         return txn
 
     def _random_time(self) -> datetime:
@@ -116,6 +120,42 @@ class Generator:
     def _merchants(self) -> list[str]:
         return [a for a, v in self.accounts.items() if v["account_type"] == "merchant"]
 
+    def recruit_mule(self) -> str:
+        """Pick the account a ring would actually use for the next hop.
+
+        Only a minority of real mule accounts are freshly opened for the purpose.
+        Most are existing accounts that get rented, bought or socially recruited,
+        and they arrive with a genuine history and an ordinary account age. If every
+        mule here were newly created, account age alone would separate the classes
+        and the classifier would learn nothing transferable.
+        """
+        rng = self.rng
+        roll = rng.random()
+
+        if roll < 0.35:
+            # opened for the purpose - young, thin KYC
+            return self.add_account("mule")
+
+        # turned: an existing personal account keeps its age, KYC tier and history
+        candidates = [a for a, v in self.accounts.items()
+                      if v["account_type"] == "personal" and not v.get("is_mule")]
+        if not candidates:
+            return self.add_account("mule")
+
+        if roll < 0.85:
+            account = rng.choice(candidates)          # actively used account, turned
+            archetype = "recruited"
+        else:
+            # dormant: little prior activity, reactivated to move money
+            quiet = sorted(candidates, key=lambda a: len(self._out_index.get(a, [])))[:150]
+            account = rng.choice(quiet or candidates)
+            archetype = "dormant"
+
+        meta = self.accounts[account]
+        meta["is_mule"] = 1
+        meta["mule_archetype"] = archetype
+        return account
+
     def background_traffic(self, n_txns: int) -> None:
         """Ordinary P2P and P2M activity - the noise a real chain hides inside."""
         rng = self.rng
@@ -131,7 +171,16 @@ class Generator:
                 receiver = rng.choice(people)
                 if sender == receiver:
                     continue
-                amount = rng.choice([rng.uniform(100, 2500), rng.uniform(2500, 30000)])
+                roll = rng.random()
+                if roll < 0.05:
+                    # legitimate high-value P2P - rent deposits, vehicle and property
+                    # advances, family transfers. Without this tail, transaction size
+                    # alone would separate fraud from background.
+                    amount = rng.uniform(45000, 420000)
+                elif roll < 0.55:
+                    amount = rng.uniform(100, 2500)
+                else:
+                    amount = rng.uniform(2500, 30000)
                 mode = "P2P"
             self.add_txn(sender, receiver, amount, ts, mode=mode)
 
@@ -151,7 +200,8 @@ class Generator:
                 if len({hub, payer, onward}) < 3:
                     continue
                 t_in = self._random_time()
-                amount = rng.uniform(3000, 45000)
+                # some of these settle genuinely large sums, matching chain amounts
+                amount = rng.uniform(3000, 45000) if rng.random() < 0.75 else rng.uniform(45000, 320000)
                 self.add_txn(payer, hub, amount, t_in)
                 gap = timedelta(minutes=rng.randint(5, 240))
                 self.add_txn(hub, onward, amount * rng.uniform(0.80, 0.99), t_in + gap)
@@ -162,21 +212,31 @@ class Generator:
         """One victim -> 3-6 mule hops -> holds the money or cashes out."""
         rng = self.rng
         chain_id = f"CHAIN{index:03d}"
-        victim = rng.choice(self._people())
+        victim = rng.choice([a for a, v in self.accounts.items()
+                             if v["account_type"] == "personal" and not v.get("is_mule")])
         n_hops = rng.randint(3, 6)
-        mules = [self.add_account("mule") for _ in range(n_hops)]
+
+        mules: list[str] = []
+        while len(mules) < n_hops:
+            candidate = self.recruit_mule()
+            if candidate != victim and candidate not in mules:
+                mules.append(candidate)
 
         amount = rng.choice([rng.uniform(18000, 90000), rng.uniform(90000, 480000)])
         ts = self._random_time().replace(minute=rng.randint(0, 59))
+
+        # most rings move within minutes; a patient minority sits on funds for hours
+        # to duck velocity rules, which is what keeps the detector honest
+        mean_gap = 22.0 if rng.random() < 0.78 else 260.0
 
         first = self.add_txn(victim, mules[0], amount, ts, chain_id=chain_id,
                              hop_index=0, is_fraud=1)
         current, current_amount, current_ts = mules[0], amount, ts
 
         for hop in range(1, n_hops):
-            current_ts = current_ts + timedelta(minutes=int(rng.expovariate(1 / 22.0)) + 2)
+            current_ts = current_ts + timedelta(minutes=int(rng.expovariate(1 / mean_gap)) + 2)
             # each mule skims a small cut; the rest moves on
-            current_amount = current_amount * rng.uniform(0.78, 0.985)
+            current_amount = current_amount * rng.uniform(0.75, 0.985)
             self.add_txn(current, mules[hop], current_amount, current_ts,
                          chain_id=chain_id, hop_index=hop, is_fraud=1)
             current = mules[hop]

@@ -40,6 +40,29 @@ def evaluate_chain_walk(graph, truth: pd.DataFrame, params: WalkParams) -> dict:
     }
 
 
+def evaluate_sensitivity(graph, truth: pd.DataFrame) -> list[dict]:
+    """How end-node accuracy moves as the walk is tightened or loosened.
+
+    The headline accuracy is measured on chains the generator built to the same
+    temporal logic the walk looks for, so on its own it is close to circular.
+    Sweeping the thresholds shows where the traversal actually degrades - which
+    is the number worth quoting when someone asks how brittle the rule is.
+    """
+    grid = [
+        ("strict   (85% fwd, 6h)", WalkParams(min_forward_pct=0.85, max_gap_hours=6)),
+        ("tight    (80% fwd, 24h)", WalkParams(min_forward_pct=0.80, max_gap_hours=24)),
+        ("default  (70% fwd, 48h)", WalkParams()),
+        ("loose    (60% fwd, 96h)", WalkParams(min_forward_pct=0.60, max_gap_hours=96)),
+        ("very loose (40% fwd, 168h)", WalkParams(min_forward_pct=0.40, max_gap_hours=168)),
+    ]
+    rows = []
+    for label, params in grid:
+        hits = sum(1 for row in truth.itertuples(index=False)
+                   if graph.chain_walk(row.entry_txn_id, params)["end_node"] == row.end_node)
+        rows.append({"setting": label, "end_node_accuracy": round(hits / len(truth), 4)})
+    return rows
+
+
 def evaluate_scan(graph, truth: pd.DataFrame, params: WalkParams, model: RiskModel) -> dict:
     chains = graph.scan(params, min_hops=3, limit=200, risk_lookup=model.score)
     truth_ends = set(truth["end_node"])
@@ -47,14 +70,23 @@ def evaluate_scan(graph, truth: pd.DataFrame, params: WalkParams, model: RiskMod
 
     hits = {truth_by_end[c["end_node"]] for c in chains if c["end_node"] in truth_ends}
     tp = sum(1 for c in chains if c["end_node"] in truth_ends)
+
+    # An investigator works the queue top-down, so precision at the depths they
+    # actually reach matters more than precision over the whole surfaced set.
+    def precision_at(k: int) -> float:
+        head = chains[:k]
+        if not head:
+            return 0.0
+        return round(sum(1 for c in head if c["end_node"] in truth_ends) / len(head), 4)
+
     return {
         "chains_surfaced": len(chains),
         "true_chains_found": len(hits),
         "recall_vs_injected": round(len(hits) / len(truth), 4),
         "precision": round(tp / len(chains), 4) if chains else 0.0,
-        "top10_precision": round(
-            sum(1 for c in chains[:10] if c["end_node"] in truth_ends) / min(10, len(chains)), 4)
-        if chains else 0.0,
+        "precision_at_10": precision_at(10),
+        "precision_at_20": precision_at(20),
+        "precision_at_30": precision_at(30),
     }
 
 
@@ -75,6 +107,7 @@ def main() -> None:
             "cashed_out_chains": int(truth["cashed_out"].sum()),
         },
         "chain_walk": evaluate_chain_walk(graph, truth, params),
+        "sensitivity": evaluate_sensitivity(graph, truth),
         "proactive_scan": evaluate_scan(graph, truth, params, model),
         "risk_model": report.as_dict(),
         "baseline": model.baseline_report,
@@ -89,6 +122,9 @@ def main() -> None:
     print("\n=== Chain walk (complaint-triggered) ===")
     for k, v in results["chain_walk"].items():
         print(f"  {k:24} {v}")
+    print("\n=== Walk sensitivity (end-node accuracy) ===")
+    for row in results["sensitivity"]:
+        print(f"  {row['setting']:28} {row['end_node_accuracy']}")
     print("\n=== Proactive scan (no complaint) ===")
     for k, v in results["proactive_scan"].items():
         print(f"  {k:24} {v}")

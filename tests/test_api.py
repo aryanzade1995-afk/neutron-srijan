@@ -1,0 +1,159 @@
+"""API contract tests, run against the real generated dataset.
+
+These boot the app the way uvicorn does, so the lifespan hook, the model fit and
+the proactive scan are all exercised.
+"""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from graph_engine import DATA_DIR
+
+pytestmark = pytest.mark.skipif(
+    not (DATA_DIR / "transactions.csv").exists(),
+    reason="dataset not generated - run backend/generate_data.py",
+)
+
+
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
+    import app as app_module
+    from feedback import FeedbackStore
+
+    with TestClient(app_module.app) as test_client:
+        # keep the suite from appending to the real audit log
+        app_module.STATE["feedback"] = FeedbackStore(
+            tmp_path_factory.mktemp("feedback") / "feedback.jsonl")
+        yield test_client
+
+
+def test_health(client):
+    body = client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert body["transactions"] > 0
+
+
+def test_overview_reports_totals_and_model(client):
+    body = client.get("/api/overview").json()
+    assert body["transactions"] > 0
+    assert body["active_chains"] > 0
+    assert body["freezable_chains"] + body["cashed_out_chains"] == body["active_chains"]
+    assert 0 <= body["model"]["roc_auc"] <= 1
+    assert body["baseline"]["algorithm"] == "LogisticRegression"
+
+
+def test_chains_are_ranked_by_priority(client):
+    chains = client.get("/api/chains?limit=25").json()["chains"]
+    assert chains
+    scores = [c["risk"]["score"] for c in chains]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_chain_payload_is_self_consistent(client):
+    chain = client.get("/api/chains?limit=1").json()["chains"][0]
+    assert chain["hop_count"] == len(chain["hops"])
+    assert len(chain["path"]) == chain["hop_count"] + 1
+    assert chain["nodes"][0]["role"] == "victim"
+    assert chain["nodes"][-1]["account_id"] == chain["end_node"]
+    assert chain["path"][-1] == chain["end_node"]
+
+
+def test_trace_matches_the_chain_it_came_from(client):
+    chain = client.get("/api/chains?limit=1").json()["chains"][0]
+    traced = client.get(f"/api/trace/{chain['entry_txn_id']}").json()
+    assert traced["end_node"] == chain["end_node"]
+    assert traced["hop_count"] == chain["hop_count"]
+
+
+def test_trace_honours_walk_parameters(client):
+    entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
+    strict = client.get(f"/api/trace/{entry}?min_forward_pct=0.99&max_gap_hours=0.05").json()
+    default = client.get(f"/api/trace/{entry}").json()
+    assert strict["hop_count"] <= default["hop_count"]
+
+
+def test_trace_rejects_unknown_transaction(client):
+    assert client.get("/api/trace/TXN9999999").status_code == 404
+
+
+def test_trace_validates_parameter_bounds(client):
+    entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
+    assert client.get(f"/api/trace/{entry}?min_forward_pct=5").status_code == 422
+    assert client.get(f"/api/trace/{entry}?max_hops=0").status_code == 422
+
+
+def test_risk_score_explains_itself(client):
+    account = client.get("/api/watchlist?limit=1").json()["accounts"][0]["account_id"]
+    body = client.get(f"/api/risk-score/{account}").json()
+    assert 0 <= body["score"] <= 1
+    assert body["signals"]
+    assert all(0 <= s["percentile"] <= 100 for s in body["signals"])
+
+
+def test_risk_score_unknown_account(client):
+    assert client.get("/api/risk-score/nobody@nowhere").status_code == 404
+
+
+def test_watchlist_is_sorted_descending(client):
+    accounts = client.get("/api/watchlist?limit=20&min_score=0.3").json()["accounts"]
+    scores = [a["score"] for a in accounts]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_search_finds_a_transaction(client):
+    entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
+    body = client.get(f"/api/search?q={entry}").json()
+    assert entry in [t["txn_id"] for t in body["transactions"]]
+
+
+# ---------- feedback loop ----------
+
+def test_recording_a_verdict_persists_and_attaches_to_the_chain(client):
+    entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
+
+    posted = client.post("/api/feedback", json={
+        "entry_txn_id": entry, "verdict": "confirmed_fraud",
+        "note": "funds frozen at end node", "reviewer": "desk-01",
+    })
+    assert posted.status_code == 201
+    assert posted.json()["recorded"]["verdict"] == "confirmed_fraud"
+
+    traced = client.get(f"/api/trace/{entry}").json()
+    assert traced["review"]["verdict"] == "confirmed_fraud"
+    assert traced["review"]["reviewer"] == "desk-01"
+
+
+def test_confirmed_chains_become_training_labels(client):
+    entry = client.get("/api/chains?limit=3").json()["chains"][2]["entry_txn_id"]
+    client.post("/api/feedback", json={"entry_txn_id": entry, "verdict": "confirmed_fraud"})
+
+    labels = client.get("/api/feedback/labels").json()
+    assert labels["positives"] >= 1
+    assert all(v in (0, 1) for v in labels["labels"].values())
+
+
+def test_dismissed_chains_drop_out_of_the_queue(client):
+    chains = client.get("/api/chains?limit=25").json()["chains"]
+    target = chains[-1]["entry_txn_id"]
+
+    client.post("/api/feedback", json={"entry_txn_id": target, "verdict": "false_positive"})
+
+    remaining = [c["entry_txn_id"] for c in client.get("/api/chains?limit=60").json()["chains"]]
+    assert target not in remaining
+
+    with_dismissed = [c["entry_txn_id"] for c in
+                      client.get("/api/chains?limit=60&include_dismissed=true").json()["chains"]]
+    assert target in with_dismissed
+
+
+def test_rejects_an_unknown_verdict(client):
+    entry = client.get("/api/chains?limit=1").json()["chains"][0]["entry_txn_id"]
+    response = client.post("/api/feedback", json={"entry_txn_id": entry, "verdict": "maybe"})
+    assert response.status_code == 422
+
+
+def test_rejects_feedback_on_an_unknown_transaction(client):
+    response = client.post("/api/feedback",
+                           json={"entry_txn_id": "TXN9999999", "verdict": "confirmed_fraud"})
+    assert response.status_code == 404

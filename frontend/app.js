@@ -114,8 +114,17 @@ function renderEndnode(t) {
   ].join('');
 
   const v = $('endnode-verdict');
-  v.textContent = cash ? 'unrecoverable — cash-out' : 'FREEZE RECOMMENDED';
-  v.className = 'chip ' + (cash ? 'red' : 'green');
+  const review = t.review;
+  if (review && review.verdict === 'confirmed_fraud') {
+    v.textContent = 'CONFIRMED — freeze requested';
+    v.className = 'chip green';
+  } else if (review && review.verdict === 'false_positive') {
+    v.textContent = 'dismissed — false positive';
+    v.className = 'chip';
+  } else {
+    v.textContent = cash ? 'unrecoverable — cash-out' : 'FREEZE RECOMMENDED';
+    v.className = 'chip ' + (cash ? 'red' : 'green');
+  }
 
   $('endnode-entry').textContent = `entry ${t.entry_txn_id} · priority ${t.risk.score}/100 (${t.risk.band})`;
   $('graph-sub').textContent = t.risk.explanation;
@@ -383,16 +392,60 @@ $('btn-next').addEventListener('click', () => {
   runTrace(state.chains[state.index].entry_txn_id);
 });
 
-$('btn-freeze').addEventListener('click', () => {
+async function recordVerdict(verdict, note) {
+  const t = state.trace;
+  if (!t) return null;
+  const res = await fetch('/api/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entry_txn_id: t.entry_txn_id, verdict, note, reviewer: 'console' }),
+  });
+  if (!res.ok) throw new Error(`feedback ${res.status}`);
+  const body = await res.json();
+  state.trace.review = body.recorded;
+  renderEndnode(state.trace);
+  return body;
+}
+
+$('btn-freeze').addEventListener('click', async () => {
   const t = state.trace;
   if (!t) return;
   if (t.end_reason === 'cash_out') {
     alert('This trail ends at a cash-out. A freeze cannot recover these funds — escalate to law enforcement instead.');
     return;
   }
-  alert(`Freeze request drafted\n\nAccount: ${t.end_node}\nAmount held: ${inr(t.amount_at_end)}\n` +
-        `Chain: ${t.hop_count} hops over ${mins(t.elapsed_minutes)}\nPriority: ${t.risk.score}/100 (${t.risk.band})\n\n` +
-        `Basis: ${t.risk.explanation}\n\nIn production this posts to the bank's fraud queue for human review before any freeze.`);
+  const ok = confirm(
+    `Raise a freeze request?\n\nAccount: ${t.end_node}\nAmount held: ${inr(t.amount_at_end)}\n` +
+    `Chain: ${t.hop_count} hops over ${mins(t.elapsed_minutes)}\nPriority: ${t.risk.score}/100 (${t.risk.band})\n\n` +
+    `Basis: ${t.risk.explanation}\n\n` +
+    `This logs the chain as confirmed fraud. In production it queues for a human ` +
+    `reviewer before any freeze is applied, and the verdict becomes training data.`);
+  if (!ok) return;
+
+  try {
+    const body = await recordVerdict('confirmed_fraud', 'freeze requested from console');
+    const { chains } = await get('/api/chains?limit=40');
+    state.chains = chains;
+    renderChains();
+    alert(`Freeze request logged for ${t.end_node}.\n\n` +
+          `${body.chains_reviewed} chain(s) reviewed so far — confirmed cases feed the next retrain.`);
+  } catch (e) {
+    alert(`Could not record the verdict — ${e.message}`);
+  }
+});
+
+$('btn-dismiss').addEventListener('click', async () => {
+  if (!state.trace) return;
+  if (!confirm('Dismiss this chain as a false positive? It will drop out of the queue.')) return;
+  try {
+    await recordVerdict('false_positive', 'dismissed from console');
+    const { chains } = await get('/api/chains?limit=40');
+    state.chains = chains;
+    renderChains();
+    if (state.chains.length) runTrace(state.chains[0].entry_txn_id);
+  } catch (e) {
+    alert(`Could not record the verdict — ${e.message}`);
+  }
 });
 
 $('btn-rescan').addEventListener('click', async () => {
