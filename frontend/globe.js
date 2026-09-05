@@ -130,19 +130,19 @@
 
   function drawAtmosphere() {
     const glow = ctx.createRadialGradient(cx, cy, R * 0.70, cx, cy, R * 1.20);
-    glow.addColorStop(0, 'rgba(28, 96, 200, 0.00)');
-    glow.addColorStop(0.58, 'rgba(52, 134, 245, 0.38)');
-    glow.addColorStop(0.82, 'rgba(120, 190, 255, 0.62)');
-    glow.addColorStop(1, 'rgba(14, 44, 96, 0)');
+    glow.addColorStop(0, 'rgba(30, 92, 86, 0.00)');
+    glow.addColorStop(0.58, 'rgba(63, 124, 116, 0.40)');
+    glow.addColorStop(0.82, 'rgba(140, 197, 186, 0.60)');
+    glow.addColorStop(1, 'rgba(16, 40, 37, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(cx, cy, R * 1.20, 0, TAU);
     ctx.fill();
 
     const body = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.42, R * 0.05, cx, cy, R);
-    body.addColorStop(0, 'rgba(24, 60, 118, 0.97)');
-    body.addColorStop(0.55, 'rgba(12, 34, 74, 0.97)');
-    body.addColorStop(1, 'rgba(5, 16, 40, 0.99)');
+    body.addColorStop(0, 'rgba(28, 62, 58, 0.97)');
+    body.addColorStop(0.55, 'rgba(16, 38, 36, 0.97)');
+    body.addColorStop(1, 'rgba(7, 17, 16, 0.99)');
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
@@ -153,16 +153,16 @@
     ctx.arc(cx, cy, R, 0, TAU);
     ctx.clip();
     const rim = ctx.createRadialGradient(cx, cy, R * 0.80, cx, cy, R);
-    rim.addColorStop(0, 'rgba(80, 160, 255, 0)');
-    rim.addColorStop(0.72, 'rgba(96, 172, 255, 0.28)');
-    rim.addColorStop(1, 'rgba(168, 216, 255, 0.85)');
+    rim.addColorStop(0, 'rgba(94, 168, 158, 0)');
+    rim.addColorStop(0.72, 'rgba(104, 172, 162, 0.28)');
+    rim.addColorStop(1, 'rgba(178, 219, 209, 0.82)');
     ctx.fillStyle = rim;
     ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
     ctx.restore();
   }
 
   function drawGrid(spin) {
-    ctx.fillStyle = 'rgba(120, 180, 250, 0.34)';
+    ctx.fillStyle = 'rgba(128, 182, 172, 0.32)';
     for (const g of GRID) {
       const p = rotateX(rotateY(sphere(g.lat, g.lon), spin), TILT);
       if (p.z <= 0.02) continue;
@@ -190,7 +190,7 @@
       const warm = l.warm;
       const col = warm > 0.40
         ? `rgba(255, ${162 + warm * 56 | 0}, ${78 + warm * 66 | 0}, ${alpha})`
-        : `rgba(${170 + warm * 120 | 0}, ${215 + warm * 40 | 0}, 255, ${alpha * 0.85})`;
+        : `rgba(${150 + warm * 110 | 0}, ${205 + warm * 40 | 0}, ${195 + warm * 50 | 0}, ${alpha * 0.85})`;
 
       ctx.fillStyle = col;
       ctx.beginPath();
@@ -229,11 +229,11 @@
       ctx.lineJoin = 'round';
 
       // soft outer glow
-      ctx.strokeStyle = `rgba(80, 165, 255, ${0.20 * visible})`;
+      ctx.strokeStyle = `rgba(79, 143, 134, ${0.24 * visible})`;
       ctx.lineWidth = arc.width * 5;
       strokePath(pts);
 
-      ctx.strokeStyle = `rgba(150, 212, 255, ${0.85 * visible})`;
+      ctx.strokeStyle = `rgba(155, 200, 189, ${0.85 * visible})`;
       ctx.lineWidth = arc.width;
       strokePath(pts);
 
@@ -242,17 +242,17 @@
       const idx = Math.floor(head * STEPS);
       const tail = pts.slice(Math.max(0, idx - 7), idx + 1);
       if (tail.length > 1) {
-        ctx.strokeStyle = `rgba(235, 248, 255, ${1.0 * visible})`;
+        ctx.strokeStyle = `rgba(232, 238, 236, ${1.0 * visible})`;
         ctx.lineWidth = arc.width * 1.5;
         strokePath(tail);
 
         const tip = pts[idx];
         if (tip && tip.z > -0.2) {
-          ctx.fillStyle = `rgba(235, 248, 255, ${0.9 * visible})`;
+          ctx.fillStyle = `rgba(232, 238, 236, ${0.9 * visible})`;
           ctx.beginPath();
           ctx.arc(tip.x, tip.y, arc.width * 1.5, 0, TAU);
           ctx.fill();
-          ctx.fillStyle = `rgba(140, 205, 255, ${0.34 * visible})`;
+          ctx.fillStyle = `rgba(155, 200, 189, ${0.34 * visible})`;
           ctx.beginPath();
           ctx.arc(tip.x, tip.y, arc.width * 7, 0, TAU);
           ctx.fill();
@@ -269,7 +269,7 @@
   }
 
   function drawStars(t) {
-    ctx.fillStyle = 'rgba(205, 230, 255, 0.75)';
+    ctx.fillStyle = 'rgba(214, 230, 226, 0.72)';
     for (let i = 0; i < 90; i++) {
       const x = ((i * 97.31) % 100) / 100 * W;
       const y = ((i * 41.77) % 100) / 100 * H * 0.72;

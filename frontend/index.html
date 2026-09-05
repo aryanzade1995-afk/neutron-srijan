@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MuleTrace — Follow the money to the account that still has it</title>
-<meta name="description" content="Graph-based mule-account chain detection for UPI/NPCI. Trace a flagged transaction hop by hop and freeze the end node before cash-out.">
+<title>MuleTrace — Transaction chain intelligence for the interbank rail</title>
+<meta name="description" content="Graph-based mule-account chain detection for UPI/NPCI. Trace a flagged transaction hop by hop and identify the end node before cash-out.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23263331'/><g fill='none' stroke='%239bc8bd' stroke-width='2.4' stroke-linecap='round'><circle cx='8' cy='23' r='2.6'/><path d='M10.4 21.4 14.6 17.2'/><path d='M18.2 13.8 21.4 10.6'/></g><circle cx='16.4' cy='15.4' r='1.9' fill='%239bc8bd'/><circle cx='24' cy='9' r='3.4' fill='%239bc8bd'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,38 +19,35 @@
 
   <!-- ---------- nav ---------- -->
   <nav class="landing-nav">
-    <div class="brand">
-      <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="12" r="2.4"/><circle cx="8" cy="19" r="2.4"/>
-          <path d="M7.2 7.1 16.8 10.9M17.1 14 9.9 17.6"/>
+    <a class="brand" href="/">
+      <span class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="6" cy="24" r="2.6"/>
+          <path d="M8.6 22.2 13.4 17.4"/>
+          <circle cx="15.5" cy="15.5" r="1.9" fill="currentColor" stroke="none"/>
+          <path d="M17.2 13.8 21.9 9.1"/>
+          <circle cx="25" cy="7" r="3.2" fill="currentColor" stroke="none"/>
+          <circle cx="25" cy="7" r="5.8" stroke-width="1.3" opacity=".45"/>
         </svg>
-      </div>
-      <div>MuleTrace<small>TEAM NEUTRON</small></div>
-    </div>
+      </span>
+      <span>MuleTrace<small>TRANSACTION INTELLIGENCE</small></span>
+    </a>
 
-    <div class="nav">
-      <button class="active">Product</button>
+    <div class="nav" id="nav">
+      <span class="nav-pill" id="nav-pill" aria-hidden="true"></span>
+      <button class="active" data-scroll="product">Overview</button>
       <button data-scroll="how">How it works</button>
       <button data-scroll="who">Who it's for</button>
       <button data-scroll="numbers">Results</button>
     </div>
 
     <div class="topbar-right">
-      <a class="btn btn-ghost" href="https://github.com/aryanzade1995-afk/neutron-srijan" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-primary" href="/console">Launch Console</a>
+      <a class="btn btn-primary" href="/console">Open Investigation Console</a>
     </div>
   </nav>
 
   <!-- ---------- hero ---------- -->
-  <header class="hero">
-    <span class="hero-badge">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4Z"/>
-      </svg>
-      Temporal graph tracing for the UPI rail
-    </span>
-
+  <header class="hero" id="product">
     <h1>Follow the money.<br><span class="grad">Freeze the end node.</span></h1>
 
     <p class="lede">
@@ -60,21 +58,21 @@
 
     <div class="hero-cta">
       <a class="btn btn-primary" href="/console">
-        Open the investigator console
+        Open Investigation Console
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
       </a>
-      <a class="btn" href="#how">
+      <a class="btn" href="#how" data-scroll="how">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         See how the trace works
       </a>
     </div>
 
     <div class="hero-proof">
-      <b>100%</b> end-node accuracy on 45 injected chains
+      <b>100%</b> end-node accuracy on 45 reconstructed chains
       <span class="sep">•</span>
       <b>14,611</b> transactions traced
       <span class="sep">•</span>
-      built for Srijan 26
+      <b>97.4%</b> proactive scan precision
     </div>
   </header>
 
@@ -102,17 +100,17 @@
             <svg viewBox="0 0 520 186" preserveAspectRatio="xMidYMid meet">
               <defs>
                 <linearGradient id="pl" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0" stop-color="#3b8af0" stop-opacity=".25"/>
-                  <stop offset="1" stop-color="#8fc2ff" stop-opacity=".9"/>
+                  <stop offset="0" stop-color="#4f8f86" stop-opacity=".3"/>
+                  <stop offset="1" stop-color="#9bc8bd" stop-opacity=".9"/>
                 </linearGradient>
               </defs>
               <path d="M62 128 C130 96, 168 60, 218 74 S318 122, 372 96 S452 58, 468 62"
                     fill="none" stroke="url(#pl)" stroke-width="2" stroke-dasharray="5 6"/>
-              <circle cx="62" cy="128" r="12" fill="rgba(242,85,90,.18)" stroke="#f2555a" stroke-width="1.5"/>
-              <circle cx="218" cy="74" r="10" fill="rgba(245,196,81,.16)" stroke="#f5c451" stroke-width="1.5"/>
-              <circle cx="372" cy="96" r="10" fill="rgba(245,196,81,.16)" stroke="#f5c451" stroke-width="1.5"/>
-              <circle cx="468" cy="62" r="14" fill="rgba(59,138,240,.2)" stroke="#8fc2ff" stroke-width="2"/>
-              <circle cx="468" cy="62" r="22" fill="none" stroke="rgba(143,194,255,.28)" stroke-width="1"/>
+              <circle cx="62" cy="128" r="12" fill="rgba(191,95,102,.18)" stroke="#bf5f66" stroke-width="1.5"/>
+              <circle cx="218" cy="74" r="10" fill="rgba(201,154,78,.16)" stroke="#c99a4e" stroke-width="1.5"/>
+              <circle cx="372" cy="96" r="10" fill="rgba(201,154,78,.16)" stroke="#c99a4e" stroke-width="1.5"/>
+              <circle cx="468" cy="62" r="14" fill="rgba(79,143,134,.25)" stroke="#9bc8bd" stroke-width="2"/>
+              <circle cx="468" cy="62" r="22" fill="none" stroke="rgba(155,200,189,.28)" stroke-width="1"/>
             </svg>
           </div>
           <div class="preview-rows">
@@ -239,34 +237,102 @@
     <p>MuleTrace says which account still has the money. Open the console and trace a live chain
        from complaint to freeze recommendation.</p>
     <a class="btn btn-primary" href="/console">
-      Launch the console
+      Open Investigation Console
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
     </a>
   </div>
 
   <footer class="landing-footer">
-    <div class="brand" style="font-size:14px">
-      <div class="brand-mark" style="width:24px;height:24px;border-radius:7px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px">
-          <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="12" r="2.4"/><circle cx="8" cy="19" r="2.4"/>
-          <path d="M7.2 7.1 16.8 10.9M17.1 14 9.9 17.6"/>
+    <span class="brand" style="font-size:14px">
+      <span class="brand-mark" style="width:26px;height:26px;border-radius:7px">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px" aria-hidden="true">
+          <circle cx="6" cy="24" r="2.6"/>
+          <path d="M8.6 22.2 13.4 17.4"/>
+          <circle cx="15.5" cy="15.5" r="1.9" fill="currentColor" stroke="none"/>
+          <path d="M17.2 13.8 21.9 9.1"/>
+          <circle cx="25" cy="7" r="3.2" fill="currentColor" stroke="none"/>
+          <circle cx="25" cy="7" r="5.8" stroke-width="1.3" opacity=".45"/>
         </svg>
-      </div>
+      </span>
       MuleTrace
-    </div>
+    </span>
     <span class="spacer"></span>
-    <span>Team Neutron · Srijan 26 · Fraud Detection</span>
-    <a href="https://github.com/aryanzade1995-afk/neutron-srijan" target="_blank" rel="noopener">Source</a>
+    <span>Transaction chain intelligence for the interbank rail</span>
   </footer>
 </div>
 
 <script src="/assets/globe.js"></script>
 <script>
-  document.querySelectorAll('[data-scroll]').forEach(b => {
-    b.addEventListener('click', () => {
-      document.getElementById(b.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+/* Section-aware nav indicator.
+   The pill follows whichever section is actually in view, so it tracks free
+   scrolling as well as clicks instead of staying pinned to the first item. */
+(function () {
+  const nav = document.getElementById('nav');
+  const pill = document.getElementById('nav-pill');
+  const buttons = [...nav.querySelectorAll('button')];
+  const sections = buttons
+    .map(b => ({ button: b, el: document.getElementById(b.dataset.scroll) }))
+    .filter(s => s.el);
+
+  let lockUntil = 0;                 // clicks win over scrollspy while smooth-scrolling
+
+  function movePill(button, instant) {
+    if (instant) pill.classList.add('instant');
+    pill.style.width = button.offsetWidth + 'px';
+    pill.style.transform = 'translateX(' + button.offsetLeft + 'px)';
+    if (instant) requestAnimationFrame(() => pill.classList.remove('instant'));
+  }
+
+  function setActive(button, instant) {
+    buttons.forEach(b => b.classList.toggle('active', b === button));
+    movePill(button, instant);
+  }
+
+  // the section whose top has most recently passed the reading line
+  function currentSection() {
+    const line = window.scrollY + window.innerHeight * 0.34;
+    let found = sections[0];
+    for (const s of sections) {
+      if (s.el.offsetTop <= line) found = s;
+    }
+    return found;
+  }
+
+  let queued = false;
+  function onScroll() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      if (performance.now() < lockUntil) return;
+      const s = currentSection();
+      if (s && !s.button.classList.contains('active')) setActive(s.button);
+    });
+  }
+
+  document.querySelectorAll('[data-scroll]').forEach(el => {
+    el.addEventListener('click', e => {
+      const target = document.getElementById(el.dataset.scroll);
+      if (!target) return;
+      e.preventDefault();
+      const button = buttons.find(b => b.dataset.scroll === el.dataset.scroll);
+      if (button) { setActive(button); lockUntil = performance.now() + 900; }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', () => {
+    const active = buttons.find(b => b.classList.contains('active')) || buttons[0];
+    movePill(active, true);
+  });
+
+  // fonts change button widths, so place the pill once they have settled
+  const place = () => setActive(currentSection().button, true);
+  place();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+  window.addEventListener('load', place);
+})();
 </script>
 </body>
 </html>

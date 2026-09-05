@@ -34,7 +34,7 @@ const when = (iso) => {
   return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-const bandColor = (b) => ({ critical: '#f2555a', high: '#f5904f', medium: '#f5c451', low: '#4ade80' }[b] || '#848da3');
+const bandColor = (b) => ({ critical: '#bf5f66', high: '#c9834e', medium: '#c99a4e', low: '#6aa88f' }[b] || '#8ea39e');
 
 async function get(path) {
   const res = await fetch(API + path);
@@ -53,25 +53,25 @@ function renderStats() {
       label: 'Active chains', value: o.active_chains,
       sub: `${o.freezable_chains} still freezable · ${o.cashed_out_chains} cashed out`,
       pct: Math.min(100, o.active_chains / 60 * 100), bar: 'blue',
-      pips: [['#3b8af0', 'C'], ['#7b5cfa', 'H'], ['#f5c451', 'M']],
+      pips: [['#4f8f86', 'C'], ['#3d6f68', 'H'], ['#c99a4e', 'M']],
     },
     {
       label: 'Recoverable right now', value: inr(o.funds_recoverable),
       sub: `${inr(o.funds_lost)} already cashed out`,
       pct: o.funds_recoverable / total * 100, bar: '',
-      pips: [['#4ade80', '₹']],
+      pips: [['#6aa88f', '₹']],
     },
     {
       label: 'Median chain duration', value: mins(o.median_chain_minutes),
       sub: 'complaint window before cash-out',
       pct: Math.min(100, o.median_chain_minutes / 240 * 100), bar: 'amber',
-      pips: [['#f5c451', '⏱']],
+      pips: [['#c99a4e', '⏱']],
     },
     {
       label: 'Accounts flagged', value: o.accounts_flagged,
       sub: `of ${o.accounts.toLocaleString('en-IN')} on the network`,
       pct: o.accounts_flagged / o.accounts * 100, bar: 'red',
-      pips: [['#f2555a', '!']],
+      pips: [['#bf5f66', '!']],
     },
   ];
 
@@ -124,10 +124,10 @@ function renderEndnode(t) {
 // ---------- graph ----------
 
 const NODE_STYLE = {
-  victim: { bg: 'rgba(242,85,90,.20)', border: '#f2555a', size: 22 },
-  mule: { bg: 'rgba(245,196,81,.16)', border: '#f5c451', size: 17 },
-  end_node: { bg: 'rgba(143,194,255,.22)', border: '#8fc2ff', size: 26 },
-  cashout: { bg: 'rgba(107,114,128,.20)', border: '#6b7280', size: 24 },
+  victim: { bg: 'rgba(191,95,102,.22)', border: '#bf5f66', size: 22 },
+  mule: { bg: 'rgba(201,154,78,.18)', border: '#c99a4e', size: 17 },
+  end_node: { bg: 'rgba(155,200,189,.24)', border: '#9bc8bd', size: 26 },
+  cashout: { bg: 'rgba(99,115,111,.22)', border: '#63736f', size: 24 },
 };
 
 function renderGraph(t) {
@@ -144,8 +144,8 @@ function renderGraph(t) {
       size: s.size,
       color: { background: s.bg, border: s.border, highlight: { background: s.bg, border: '#fff' } },
       borderWidth: n.role === 'end_node' ? 3 : 2,
-      font: { color: '#d7dcea', size: 11, face: 'Plus Jakarta Sans', multi: false, vadjust: -2 },
-      shadow: { enabled: n.role === 'end_node', color: 'rgba(143,194,255,.6)', size: 26, x: 0, y: 0 },
+      font: { color: '#c3cfcb', size: 11, face: 'Plus Jakarta Sans', multi: false, vadjust: -2 },
+      shadow: { enabled: n.role === 'end_node', color: 'rgba(155,200,189,.55)', size: 26, x: 0, y: 0 },
     };
   });
 
@@ -154,10 +154,10 @@ function renderGraph(t) {
     to: h.target,
     label: `${inr(h.amount)}${h.hop ? `\n${mins(h.gap_minutes)} · ${(h.forward_pct * 100).toFixed(0)}%` : ''}`,
     arrows: { to: { enabled: true, scaleFactor: 0.65 } },
-    color: { color: h.split_of ? 'rgba(123,92,250,.75)' : 'rgba(59,138,240,.62)', highlight: '#8fc2ff' },
+    color: { color: h.split_of ? 'rgba(155,200,189,.7)' : 'rgba(79,143,134,.75)', highlight: '#9bc8bd' },
     width: 1.6,
     dashes: h.split_of ? [6, 4] : false,
-    font: { color: '#7c869c', size: 10, face: 'Plus Jakarta Sans', strokeWidth: 0, align: 'middle' },
+    font: { color: '#8ea39e', size: 10, face: 'Plus Jakarta Sans', strokeWidth: 0, align: 'middle' },
     smooth: { type: 'curvedCW', roundness: 0.16 },
   }));
 
@@ -193,7 +193,7 @@ function renderTimeline(t) {
           <div class="meta">
             ${h.hop === 0 ? '<span>victim transfer</span>' : `<span>+${mins(h.gap_minutes)} later</span><span>${(h.forward_pct * 100).toFixed(0)}% forwarded</span>`}
             <span>${h.mode}</span>
-            ${h.split_of ? `<span style="color:#b9a6ff">split into ${h.split_of}</span>` : ''}
+            ${h.split_of ? `<span style="color:#9bc8bd">split into ${h.split_of}</span>` : ''}
             ${node.mule_score != null ? `<span>mule ${(node.mule_score * 100).toFixed(0)}</span>` : ''}
           </div>
         </div>
@@ -249,7 +249,7 @@ async function renderWatchlist() {
       <td class="mono">${inr(a.total_in)}</td>
       <td>
         <div class="score-cell">
-          <span class="score-track"><span style="width:${a.score * 100}%;background:${a.score >= .75 ? '#f2555a' : '#f5c451'}"></span></span>
+          <span class="score-track"><span style="width:${a.score * 100}%;background:${a.score >= .75 ? '#bf5f66' : '#c99a4e'}"></span></span>
           <b class="mono">${(a.score * 100).toFixed(0)}</b>
         </div>
       </td>
@@ -331,9 +331,19 @@ async function runTrace(txnId) {
 
 // ---------- views ----------
 
+function moveNavPill(button, instant) {
+  const pill = $('nav-pill');
+  if (!pill || !button) return;
+  if (instant) pill.classList.add('instant');
+  pill.style.width = button.offsetWidth + 'px';
+  pill.style.transform = 'translateX(' + button.offsetLeft + 'px)';
+  if (instant) requestAnimationFrame(() => pill.classList.remove('instant'));
+}
+
 function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  moveNavPill(document.querySelector('#nav button[data-view="' + name + '"]'));
   if (name === 'watchlist') renderWatchlist();
   if (name === 'model') renderModel();
   if (name === 'trace') renderComplaints();
@@ -355,6 +365,12 @@ async function boot() {
 
 document.querySelectorAll('#nav button').forEach(b =>
   b.addEventListener('click', () => switchView(b.dataset.view)));
+
+// place the indicator once fonts have settled, and keep it aligned on resize
+const placeNavPill = () => moveNavPill(document.querySelector('#nav button.active'), true);
+placeNavPill();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeNavPill);
+window.addEventListener('resize', placeNavPill);
 
 document.querySelectorAll('.card-head .pill-btn[data-band]').forEach(b =>
   b.addEventListener('click', () => { state.band = b.dataset.band; renderChains(); }));
@@ -411,5 +427,5 @@ async function doSearch() {
 });
 
 boot().catch(err => {
-  $('loading').innerHTML = `<p style="color:#f2555a">Could not reach the API — ${err.message}</p>`;
+  $('loading').innerHTML = `<p style="color:#bf5f66">Could not reach the API — ${err.message}</p>`;
 });
