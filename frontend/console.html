@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MuleTrace — Investigator Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js"></script>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="spin"></div>
+  <p>Building the transaction graph and scoring accounts…</p>
+</div>
+
+<div class="shell">
+
+  <!-- ---------- top bar ---------- -->
+  <div class="topbar">
+    <a class="brand" href="/">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="12" r="2.4"/><circle cx="8" cy="19" r="2.4"/>
+          <path d="M7.2 7.1 16.8 10.9M17.1 14 9.9 17.6"/>
+        </svg>
+      </div>
+      <div>MuleTrace<small>FRAUD DESK</small></div>
+    </a>
+
+    <div class="nav" id="nav">
+      <button class="active" data-view="chains">Live Chains</button>
+      <button data-view="trace">Trace</button>
+      <button data-view="watchlist">Watchlist</button>
+      <button data-view="model">Model</button>
+    </div>
+
+    <div class="topbar-right">
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#5d6479" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="search-input" placeholder="Txn ID or VPA…" autocomplete="off">
+        <button class="go" id="search-go" title="Trace">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+      <button class="icon-btn" id="btn-rescan" title="Re-run the proactive scan">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+      </button>
+      <div class="avatar">AZ</div>
+    </div>
+  </div>
+
+  <!-- ---------- page head ---------- -->
+  <div class="pagehead">
+    <div class="crumbs">
+      <span class="dim">Fraud desk</span>
+      <span class="sep">›</span>
+      <span id="crumb-chain">—</span>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn" id="btn-next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+      Next chain
+    </button>
+    <button class="btn btn-primary" id="btn-freeze">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4.5 7l15 10M19.5 7l-15 10"/></svg>
+      Raise freeze request
+    </button>
+  </div>
+
+  <!-- ---------- end-node banner ---------- -->
+  <div class="card endnode" id="endnode">
+    <svg class="endnode-wave" viewBox="0 0 900 90" preserveAspectRatio="none">
+      <path d="M0 62 C120 24 200 78 320 50 S520 8 640 44 S820 78 900 40" fill="none" stroke="rgba(123,92,250,.35)" stroke-width="1"/>
+      <path d="M0 70 C120 34 200 86 320 58 S520 18 640 52 S820 86 900 48" fill="none" stroke="rgba(59,138,240,.28)" stroke-width="1"/>
+      <path d="M0 54 C120 16 200 70 320 42 S520 0 640 36 S820 70 900 32" fill="none" stroke="rgba(143,194,255,.18)" stroke-width="1"/>
+    </svg>
+    <div class="endnode-id">
+      <div class="node-badge" id="endnode-badge">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
+        </svg>
+      </div>
+      <div>
+        <h2 id="endnode-vpa">—</h2>
+        <div class="sub" id="endnode-sub">Select a chain to trace</div>
+        <div class="endnode-chips" id="endnode-chips"></div>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <div class="endnode-actions">
+      <span class="chip blue" id="endnode-verdict">awaiting trace</span>
+      <span class="link" id="endnode-entry"></span>
+    </div>
+  </div>
+
+  <!-- ---------- stats ---------- -->
+  <div class="stats" id="stats"></div>
+
+  <!-- ---------- graph + timeline ---------- -->
+  <div class="split">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Money trail</h3>
+          <div class="sub" id="graph-sub">victim → mules → end node, ordered in time</div>
+        </div>
+        <span class="spacer"></span>
+        <button class="pill-btn" id="btn-fit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          Fit
+        </button>
+      </div>
+      <div id="graph"></div>
+      <div class="legend">
+        <span><i class="dot" style="background:#f2555a"></i> Victim</span>
+        <span><i class="dot" style="background:#f5c451"></i> Mule hop</span>
+        <span><i class="dot" style="background:#8fc2ff"></i> End node — funds still here</span>
+        <span><i class="dot" style="background:#6b7280"></i> Cash-out — unrecoverable</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Hop ledger</h3>
+          <div class="sub">every hop with the numbers that admitted it</div>
+        </div>
+      </div>
+      <div class="timeline" id="timeline"><div class="empty">No trace loaded.</div></div>
+    </div>
+  </div>
+
+  <!-- ---------- switchable panel ---------- -->
+
+  <!-- Live chains -->
+  <div class="view active" id="view-chains">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Active chains</h3>
+          <div class="sub" id="chains-sub">ranked by recovery priority — highest value still sitting still</div>
+        </div>
+        <span class="spacer"></span>
+        <button class="pill-btn" data-band="" id="f-all">All</button>
+        <button class="pill-btn" data-band="critical">Critical</button>
+        <button class="pill-btn" data-band="high">High</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Entry txn</th><th>Victim</th><th>End node</th><th>Hops</th>
+            <th>At end node</th><th>Elapsed</th><th>Priority</th><th>Status</th>
+          </tr></thead>
+          <tbody id="chains-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trace -->
+  <div class="view" id="view-trace">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><div><h3>Walk parameters</h3><div class="sub">what counts as the same money moving on</div></div></div>
+        <div class="pad">
+          <label class="kv"><span>Minimum forwarded</span><span><input type="range" id="p-pct" min="30" max="100" value="70"> <b id="p-pct-v">70%</b></span></label>
+          <label class="kv"><span>Window after arrival</span><span><input type="range" id="p-gap" min="1" max="168" value="48"> <b id="p-gap-v">48 h</b></span></label>
+          <label class="kv"><span>Max hops</span><span><input type="range" id="p-hops" min="2" max="20" value="10"> <b id="p-hops-v">10</b></span></label>
+          <div style="display:flex;gap:9px;margin-top:14px">
+            <input id="txn-input" placeholder="TXN0000123" style="flex:1;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--r-pill);padding:9px 15px;color:var(--text);font:inherit;font-size:12.5px;outline:none">
+            <button class="btn btn-primary" id="btn-trace">Trace</button>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Loosening these widens the walk and will pull in unrelated transfers. The defaults
+              (70% forwarded, 48 h) are the ones the evaluation reports against.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Incoming complaints</h3><div class="sub">victim-reported transactions awaiting a trace</div></div></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Txn</th><th>Victim</th><th>Amount</th><th>Reported</th></tr></thead>
+          <tbody id="complaints-body"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watchlist -->
+  <div class="view" id="view-watchlist">
+    <div class="card">
+      <div class="card-head">
+        <div><h3>Mule watchlist</h3><div class="sub">accounts the classifier flags before any complaint exists</div></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Account</th><th>Bank</th><th>Age</th><th>Forwarded</th><th>Turnaround</th><th>Received</th><th>Mule score</th></tr></thead>
+          <tbody id="watchlist-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model -->
+  <div class="view" id="view-model">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><div><h3>Classifier</h3><div class="sub">held-out 30% test split</div></div></div>
+        <div class="pad" id="model-metrics"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>What drives the score</h3><div class="sub">feature importance</div></div></div>
+        <div class="pad" id="model-features"></div>
+      </div>
+    </div>
+    <div style="margin-top:14px" class="note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div><b>Read these as a wiring check, not a performance claim.</b> The data is synthetic, and
+        mule accounts are generated young, so <b>account age</b> separates the classes almost perfectly —
+        real mule accounts are recruited from ordinary aged accounts and will not. The chain walk is the
+        part that transfers to real data; the scorer would need retraining on NPCI's graph.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

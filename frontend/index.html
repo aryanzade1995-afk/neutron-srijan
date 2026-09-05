@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MuleTrace — Follow the money to the account that still has it</title>
+<meta name="description" content="Graph-based mule-account chain detection for UPI/NPCI. Trace a flagged transaction hop by hop and freeze the end node before cash-out.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/styles.css">
+<link rel="stylesheet" href="/assets/landing.css">
+</head>
+<body>
+<div class="landing">
+
+  <div class="hero-bg"><canvas id="globe"></canvas></div>
+
+  <!-- ---------- nav ---------- -->
+  <nav class="landing-nav">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="12" r="2.4"/><circle cx="8" cy="19" r="2.4"/>
+          <path d="M7.2 7.1 16.8 10.9M17.1 14 9.9 17.6"/>
+        </svg>
+      </div>
+      <div>MuleTrace<small>TEAM NEUTRON</small></div>
+    </div>
+
+    <div class="nav">
+      <button class="active">Product</button>
+      <button data-scroll="how">How it works</button>
+      <button data-scroll="who">Who it's for</button>
+      <button data-scroll="numbers">Results</button>
+    </div>
+
+    <div class="topbar-right">
+      <a class="btn btn-ghost" href="https://github.com/aryanzade1995-afk/neutron-srijan" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary" href="/console">Launch Console</a>
+    </div>
+  </nav>
+
+  <!-- ---------- hero ---------- -->
+  <header class="hero">
+    <span class="hero-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4Z"/>
+      </svg>
+      Temporal graph tracing for the UPI rail
+    </span>
+
+    <h1>Follow the money.<br><span class="grad">Freeze the end node.</span></h1>
+
+    <p class="lede">
+      Scammed funds hop through three to six mule accounts within minutes. MuleTrace walks
+      that chain forward in time from a single flagged transaction and names the one account
+      that still holds the money — the only one worth freezing.
+    </p>
+
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="/console">
+        Open the investigator console
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+      </a>
+      <a class="btn" href="#how">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        See how the trace works
+      </a>
+    </div>
+
+    <div class="hero-proof">
+      <b>100%</b> end-node accuracy on 45 injected chains
+      <span class="sep">•</span>
+      <b>14,611</b> transactions traced
+      <span class="sep">•</span>
+      built for Srijan 26
+    </div>
+  </header>
+
+  <!-- ---------- console preview ---------- -->
+  <div class="preview-frame">
+    <div class="preview-inner">
+      <div class="preview-bar">
+        <span class="mini-mark"></span>
+        <div class="mini-nav">
+          <span class="on">Live Chains</span><span>Trace</span><span>Watchlist</span><span>Model</span>
+        </div>
+        <span class="spacer"></span>
+        <span class="mini-search"></span>
+        <span class="mini-dot"></span>
+      </div>
+      <div class="preview-body">
+        <div class="preview-stats">
+          <div class="preview-stat"><i>Active chains</i><b>39</b><div class="bar blue"><span style="width:78%"></span></div></div>
+          <div class="preview-stat"><i>Recoverable</i><b>₹41.2L</b><div class="bar"><span style="width:62%"></span></div></div>
+          <div class="preview-stat"><i>Median trace</i><b>2.4 min</b><div class="bar amber"><span style="width:34%"></span></div></div>
+          <div class="preview-stat"><i>Accounts flagged</i><b>183</b><div class="bar red"><span style="width:47%"></span></div></div>
+        </div>
+        <div class="preview-split">
+          <div class="preview-graph">
+            <svg viewBox="0 0 520 186" preserveAspectRatio="xMidYMid meet">
+              <defs>
+                <linearGradient id="pl" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#3b8af0" stop-opacity=".25"/>
+                  <stop offset="1" stop-color="#8fc2ff" stop-opacity=".9"/>
+                </linearGradient>
+              </defs>
+              <path d="M62 128 C130 96, 168 60, 218 74 S318 122, 372 96 S452 58, 468 62"
+                    fill="none" stroke="url(#pl)" stroke-width="2" stroke-dasharray="5 6"/>
+              <circle cx="62" cy="128" r="12" fill="rgba(242,85,90,.18)" stroke="#f2555a" stroke-width="1.5"/>
+              <circle cx="218" cy="74" r="10" fill="rgba(245,196,81,.16)" stroke="#f5c451" stroke-width="1.5"/>
+              <circle cx="372" cy="96" r="10" fill="rgba(245,196,81,.16)" stroke="#f5c451" stroke-width="1.5"/>
+              <circle cx="468" cy="62" r="14" fill="rgba(59,138,240,.2)" stroke="#8fc2ff" stroke-width="2"/>
+              <circle cx="468" cy="62" r="22" fill="none" stroke="rgba(143,194,255,.28)" stroke-width="1"/>
+            </svg>
+          </div>
+          <div class="preview-rows">
+            <div class="preview-row"><span class="k"></span><span class="l"><i style="width:88%"></i></span></div>
+            <div class="preview-row"><span class="k"></span><span class="l"><i style="width:71%"></i></span></div>
+            <div class="preview-row"><span class="k"></span><span class="l"><i style="width:64%"></i></span></div>
+            <div class="preview-row"><span class="k end"></span><span class="l"><i style="width:93%"></i></span></div>
+            <div class="preview-row"><span class="k"></span><span class="l"><i style="width:42%"></i></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- how it works ---------- -->
+  <section class="section" id="how">
+    <div class="section-head">
+      <h2>One flagged transaction in. One account to freeze out.</h2>
+      <p>Accounts are nodes, transactions are time-stamped edges. The walk only continues where
+         the money plausibly went — after it arrived, fast, and mostly intact.</p>
+    </div>
+    <div class="how">
+      <div class="step">
+        <b>1</b>
+        <h4>Ingest</h4>
+        <p>Every transfer lands as a directed edge carrying amount, timestamp and mode — P2P, P2M or cash-out.</p>
+      </div>
+      <div class="step">
+        <b>2</b>
+        <h4>Trigger</h4>
+        <p>A victim complaint names a transaction, or the classifier flags an account on its own before any complaint exists.</p>
+      </div>
+      <div class="step">
+        <b>3</b>
+        <h4>Walk forward</h4>
+        <p>Follow outgoing edges that happen after the money arrived, inside the window, forwarding ≥70% — splits included.</p>
+      </div>
+      <div class="step">
+        <b>4</b>
+        <h4>Name the end node</h4>
+        <p>Where the money stops moving is where it still sits. That account gets the freeze recommendation.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- differentiators ---------- -->
+  <section class="section" id="who">
+    <div class="section-head">
+      <h2>Built for the desks that act on it</h2>
+      <p>A chain routinely crosses three banks. No single bank sees the whole path — the interbank
+         switch does.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>
+          </svg>
+        </div>
+        <h3>NPCI fraud risk</h3>
+        <p>The only vantage point that sees a chain end to end rather than one bank's fragment of it.
+           Chain reconstruction runs on a stream that already exists.</p>
+        <span class="more">Cross-bank visibility
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </span>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4Z"/><path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <h3>Bank AML desks</h3>
+        <p>Every hop arrives with the numbers that admitted it — gap, forward percentage, amount —
+           so a freeze request carries its own justification.</p>
+        <span class="more">Explainable by construction
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </span>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+          </svg>
+        </div>
+        <h3>Cybercrime units</h3>
+        <p>Replaces weeks of stitching records together bank by bank with a single traversal that
+           returns the full path and the terminal account.</p>
+        <span class="more">Minutes, not weeks
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- numbers ---------- -->
+  <section class="section" id="numbers">
+    <div class="section-head">
+      <h2>Measured, not asserted</h2>
+      <p>Every figure below comes out of <code>backend/evaluate.py</code> against 45 injected chains
+         with known ground truth — re-runnable live.</p>
+    </div>
+    <div class="metric-strip">
+      <div class="metric"><b>100%</b><span>End-node accuracy on complaint-triggered traces</span></div>
+      <div class="metric"><b>82%</b><span>Of injected chains surfaced with no complaint filed</span></div>
+      <div class="metric"><b>95%</b><span>Precision on the proactive scan</span></div>
+      <div class="metric"><b>10/10</b><span>Top-ranked chains that were genuinely fraudulent</span></div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/>
+        </svg>
+        <div>Numbers come from a <b>synthetic</b> dataset with injected chains — real UPI transaction data
+        is not accessible outside NPCI and partner banks. They demonstrate that the traversal and scoring
+        work as specified; they are not real-world precision and recall, and the pitch says so openly.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- cta ---------- -->
+  <div class="cta-band">
+    <h2>Existing tools say an account looks suspicious.</h2>
+    <p>MuleTrace says which account still has the money. Open the console and trace a live chain
+       from complaint to freeze recommendation.</p>
+    <a class="btn btn-primary" href="/console">
+      Launch the console
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+    </a>
+  </div>
+
+  <footer class="landing-footer">
+    <div class="brand" style="font-size:14px">
+      <div class="brand-mark" style="width:24px;height:24px;border-radius:7px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px">
+          <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="12" r="2.4"/><circle cx="8" cy="19" r="2.4"/>
+          <path d="M7.2 7.1 16.8 10.9M17.1 14 9.9 17.6"/>
+        </svg>
+      </div>
+      MuleTrace
+    </div>
+    <span class="spacer"></span>
+    <span>Team Neutron · Srijan 26 · Fraud Detection</span>
+    <a href="https://github.com/aryanzade1995-afk/neutron-srijan" target="_blank" rel="noopener">Source</a>
+  </footer>
+</div>
+
+<script src="/assets/globe.js"></script>
+<script>
+  document.querySelectorAll('[data-scroll]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.getElementById(b.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+</script>
+</body>
+</html>
