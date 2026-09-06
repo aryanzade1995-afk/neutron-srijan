@@ -220,6 +220,29 @@ the console still runs. Which one is live is reported on `/api/health` and
 `/api/auth/status`, and the login page says so — a silent fallback would be worse
 than none. Point `MULETRACE_REDIS_URL` at a server to switch, no code change.
 
+### Running a Redis
+
+On Windows, Memurai is a Redis-compatible service and installs in one step from
+an **elevated** terminal (the MSI's custom actions fail without elevation):
+
+```powershell
+winget install --id Memurai.MemuraiDeveloper --accept-package-agreements --accept-source-agreements
+```
+
+Alternatives: `docker run -d -p 6379:6379 redis:7-alpine`, or set
+`MULETRACE_REDIS_URL` to a managed instance.
+
+Then verify — this exercises exactly the operations the app issues and cleans up
+after itself:
+
+```bash
+.venv/Scripts/python.exe scripts/check_redis.py
+```
+
+`tests/test_store.py` runs the same 19 assertions against both backends. They
+skip when no server answers, so a green run without Redis is not evidence the
+Redis path works; run them once a server is up.
+
 ## Feedback loop
 
 Closed cases are the only route to labels that are not synthetic, so they are captured as first-class data. `POST /api/feedback` writes an append-only JSON Lines log (`data/feedback.jsonl`), replayed into memory at boot. Append-only because a freeze decision is an audit trail: a verdict is superseded by a later entry, never edited in place.

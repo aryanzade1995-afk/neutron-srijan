@@ -4,8 +4,8 @@
     {
       "name": "muletrace",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "app:app", "--app-dir", "backend", "--port", "8000", "--reload"],
-      "port": 8000,
+      "runtimeArgs": ["-m", "uvicorn", "app:app", "--app-dir", "backend", "--port", "8010", "--reload"],
+      "port": 8010,
       "autoPort": false
     }
   ]
