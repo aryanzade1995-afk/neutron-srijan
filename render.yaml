@@ -24,17 +24,25 @@ databases:
     databaseName: muletrace
     user: muletrace
 
-services:
-  # Working copy and detection patterns. If Render rejects `type: redis` on your
-  # account, it has been renamed - use `type: keyvalue` with the same fields.
-  # The app runs without it either way, on the in-process store.
-  - type: redis
-    name: muletrace-cache
-    plan: free
-    region: singapore
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []          # reachable only from inside the Render network
+# Redis is commented out deliberately.
+#
+# Render's free Key Value tier would not provision in the web service's region -
+# it kept landing in Oregon while the web service ran in Singapore, and internal
+# hostnames (red-...) do not resolve across regions. A cross-region Redis would
+# also need its IP allow list opened to the internet and would add ~250ms to
+# every command, which is worse than not having it: the app falls back to the
+# in-process store and reports that on /api/health.
+#
+# To enable it, put the web service in the same region as the free Key Value
+# instance, uncomment this, and set MULETRACE_REDIS_URL below to fromService.
+#
+#  - type: redis
+#    name: muletrace-cache
+#    plan: free
+#    maxmemoryPolicy: allkeys-lru
+#    ipAllowList: []
 
+services:
   - type: web
     name: muletrace-api
     runtime: python
@@ -47,18 +55,22 @@ services:
       - key: PYTHON_VERSION
         value: "3.12"
 
-      # PostgreSQL — the system of record. Render injects the connection string.
+      # PostgreSQL — the system of record.
+      #
+      # Set in the dashboard, not bound with fromDatabase, because the free
+      # database provisions in a different region to the web service and the
+      # INTERNAL connection string will not resolve. Paste the database's
+      # EXTERNAL URL here instead: it is reachable across regions.
+      #
+      # sync:false means a blueprint sync leaves whatever the dashboard holds,
+      # so this cannot be silently reverted to an unreachable internal host.
       - key: MULETRACE_POSTGRES_URL
-        fromDatabase:
-          name: muletrace-db
-          property: connectionString
+        sync: false
 
-      # Redis — working copy plus ranked chains and per-account scores.
+      # Redis — optional. Leave unset and the in-process store is used, which
+      # /api/health reports honestly.
       - key: MULETRACE_REDIS_URL
-        fromService:
-          type: redis
-          name: muletrace-cache
-          property: connectionString
+        sync: false
 
       # Password + TOTP gate.
       - key: MULETRACE_AUTH
