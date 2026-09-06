@@ -19,13 +19,26 @@
   NODE_VERSION = "20"
 
 # ---- API proxy -------------------------------------------------------------
-# Replace the host below with your deployed backend, then redeploy.
-# Until then these return 404 and the console will say the API is unreachable.
-[[redirects]]
-  from = "/api/*"
-  to = "https://muletrace-api.onrender.com/api/:splat"
-  status = 200
-  force = true
+# DISABLED until a backend of yours exists.
+#
+# This previously pointed at a guessed hostname, muletrace-api.onrender.com,
+# which turned out to be a live service belonging to somebody else. Every
+# /api/* request from this site - including any sign-in POST - was being
+# forwarded to a third party. Never point a proxy at a host you have not
+# deployed and confirmed is yours.
+#
+# Deploy the backend (see render.yaml), confirm the URL answers with OUR
+# /api/health payload - it carries "dataset", "store" and "database" keys, not a
+# bare {"status":"ok"} - then uncomment this with that hostname and redeploy.
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://YOUR-SERVICE.onrender.com/api/:splat"
+#   status = 200
+#   force = true
+#
+# With no proxy, /api/* 404s and the console runs from demo.json in read-only
+# mode, which is the honest state: no backend, and it says so.
 
 # ---- clean URLs ------------------------------------------------------------
 # The pages reference /assets/... because the FastAPI app mounts them there.

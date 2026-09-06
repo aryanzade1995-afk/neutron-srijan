@@ -45,10 +45,75 @@ function url(path) {
   return API + path + (path.includes('?') ? '&' : '?') + 'seed=' + encodeURIComponent(PINNED_SEED);
 }
 
+/* Read-only mode.
+   With no backend reachable, the console serves a snapshot of a real detection
+   run so the interface still demonstrates something. Everything in it came out
+   of the pipeline; what it cannot do is trace an arbitrary transaction, rescan
+   or record a verdict, because those need the live service. */
+let DEMO = null;
+
+async function loadDemo() {
+  if (DEMO === null) {
+    DEMO = await fetch('/demo.json').then(r => r.ok ? r.json() : null).catch(() => null);
+  }
+  return DEMO;
+}
+
+function demoAnswer(path) {
+  if (!DEMO) return null;
+  if (path.startsWith('/api/overview')) return DEMO.overview;
+  if (path.startsWith('/api/chains')) {
+    return { count: DEMO.chains.length, chains: DEMO.chains, dataset: DEMO.overview.dataset };
+  }
+  if (path.startsWith('/api/evaluation')) return DEMO.evaluation;
+  if (path.startsWith('/api/rules')) return DEMO.rules;
+  if (path.startsWith('/api/trace/')) {
+    const id = decodeURIComponent(path.split('/api/trace/')[1].split('?')[0]);
+    const hit = DEMO.chains.find(c => c.entry_txn_id === id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 async function get(path) {
+  if (DEMO) {                       // already in read-only mode
+    const answer = demoAnswer(path);
+    if (answer) return answer;
+    throw new Error('not available without a backend');
+  }
   const res = await fetch(url(path));
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
-  return res.json();
+  if (res.ok) return res.json();
+
+  // the API is not answering - fall back to the snapshot if there is one
+  await loadDemo();
+  const answer = demoAnswer(path);
+  if (answer) {
+    showReadOnlyBanner();
+    return answer;
+  }
+  throw new Error(`${path} → ${res.status}`);
+}
+
+function showReadOnlyBanner() {
+  if (document.getElementById('ro-banner')) return;
+  const bar = document.createElement('div');
+  bar.id = 'ro-banner';
+  bar.className = 'note';
+  bar.style.cssText = 'margin:0 0 16px';
+  bar.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+    <div><b>Read-only snapshot.</b> No detection backend is connected, so this is a
+    saved run of the real pipeline — the chains, hops and rule alerts below all came
+    out of it. Tracing a new transaction, rescanning and recording verdicts need the
+    live service.</div>`;
+  const shell = document.querySelector('.shell');
+  const head = document.querySelector('.pagehead');
+  if (shell && head) shell.insertBefore(bar, head.nextSibling);
+  ['btn-freeze', 'btn-dismiss', 'btn-rescan'].forEach(id => {
+    const el = $(id);
+    if (el) { el.disabled = true; el.title = 'Needs a live backend'; el.style.opacity = '.5'; }
+  });
 }
 
 async function post(path, body) {
@@ -334,7 +399,10 @@ function walkQuery() {
 
 async function runTrace(txnId) {
   try {
-    const t = await get(`/api/trace/${encodeURIComponent(txnId)}?${walkQuery()}`);
+    const t = DEMO
+      ? (DEMO.chains.find(c => c.entry_txn_id === txnId) || null)
+      : await get(`/api/trace/${encodeURIComponent(txnId)}?${walkQuery()}`);
+    if (!t) throw new Error('that chain is not in the offline snapshot');
     state.trace = t;
     renderEndnode(t);
     renderStats();          // the stat row describes the open chain, so it moves too
