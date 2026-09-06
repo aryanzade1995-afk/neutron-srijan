@@ -1,24 +1,75 @@
-# Backend host for MuleTrace.
+# Render blueprint — the backend Netlify proxies /api/* to.
 #
-# Netlify serves the frontend and proxies /api/* here (see netlify.toml).
-# This app needs a real Python process: it holds a networkx graph and a fitted
-# scikit-learn model in an in-process LRU pool, and standing up one workspace
-# costs about 1.8s of CPU - neither fits a stateless function.
+# This app needs a real Python process, not a serverless function: it holds a
+# networkx graph and a fitted scikit-learn model in an in-process LRU pool, and
+# standing up one workspace costs ~1.8s of CPU.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and provisions all three services, wiring the connection strings in
+# automatically.
+#
+# Free-tier caveats worth knowing before the demo:
+#   * the web service sleeps after ~15 min idle; the first request afterwards
+#     pays a cold start plus a workspace build. Wake it before presenting.
+#   * free Postgres expires after 30 days.
+
+databases:
+  - name: muletrace-db
+    plan: free
+    databaseName: muletrace
+    user: muletrace
+
 services:
+  # Working copy and detection patterns. If Render rejects `type: redis` on your
+  # account, it has been renamed - use `type: keyvalue` with the same fields.
+  # The app runs without it either way, on the in-process store.
+  - type: redis
+    name: muletrace-cache
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []          # reachable only from inside the Render network
+
   - type: web
     name: muletrace-api
     runtime: python
     plan: free
+    region: singapore        # closest region to an India-facing demo
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
-      # authentication ships off; set to "on" to require password + TOTP
-      - key: MULETRACE_AUTH
-        value: "off"
-      # optional: point at a managed Redis for durable sessions and shared
-      # dataset caching. Without it the in-process store is used.
+
+      # PostgreSQL — the system of record. Render injects the connection string.
+      - key: MULETRACE_POSTGRES_URL
+        fromDatabase:
+          name: muletrace-db
+          property: connectionString
+
+      # Redis — working copy plus ranked chains and per-account scores.
       - key: MULETRACE_REDIS_URL
+        fromService:
+          type: redis
+          name: muletrace-cache
+          property: connectionString
+
+      # Password + TOTP gate.
+      - key: MULETRACE_AUTH
+        value: "on"
+
+      # The container filesystem is ephemeral, so data/users.json does not
+      # survive a deploy. Pinning these means the account is recreated identically
+      # on every boot instead of minting a new TOTP secret each time and forcing
+      # you to re-enrol. Set them in the Render dashboard - sync:false keeps them
+      # out of this file and out of git.
+      - key: MULETRACE_USER
+        value: investigator
+      - key: MULETRACE_PASSWORD
         sync: false
+      - key: MULETRACE_TOTP_SECRET
+        sync: false
+
+      # How much of the feed the rule engine treats as "now", in hours.
+      - key: MULETRACE_RULE_WINDOW_HOURS
+        value: "168"
