@@ -19,6 +19,7 @@ import auth
 import evaluate
 from feedback import Verdict
 from graph_engine import WalkParams
+from db import DB
 from store import STORE
 from workspace import Workspace, WorkspacePool
 
@@ -250,6 +251,7 @@ def health(request: Request, response: Response) -> dict:
         "chains": len(ws.chains),
         "pool": POOL.stats(),
         "store": STORE.info(),
+        "database": DB.info(),
         "auth_enabled": auth.AUTH_ENABLED,
     }
 
@@ -320,6 +322,12 @@ def new_dataset(response: Response) -> dict:
         "transactions": int(len(ws.graph.txns)),
         "accounts": int(len(ws.graph.accounts)),
     }
+
+
+@app.get("/api/datasets")
+def datasets() -> dict:
+    """What PostgreSQL is holding — the system of record for every dataset."""
+    return {"database": DB.info(), "datasets": DB.catalogue()}
 
 
 @app.get("/api/rules")

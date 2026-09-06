@@ -231,6 +231,44 @@ five per five minutes, and the enrolment secret is returned exactly once.
 Passwords are scrypt with a per-user salt. TOTP is implemented on the standard
 library rather than adding a dependency.
 
+## Data pipeline
+
+    PostgreSQL  ->  Redis  ->  in-memory graph
+     durable        working      detection
+     truth          copy
+
+**PostgreSQL is the system of record.** Every dataset — accounts, transactions and
+the labelled chains — is written there and can be queried with SQL by anyone
+auditing a case. In a real deployment this is where the bank's own warehouse
+plugs in.
+
+**Redis holds the working copy**: a serialised snapshot of the dataset in play,
+plus the detection output (ranked chains, per-account scores, cached traces).
+Losing it costs a reload from Postgres, nothing more.
+
+A seed nobody has produced yet is generated once, persisted to Postgres, and
+cached in Redis. After that it is served from Redis, falling back to Postgres
+when the cache is cold. Measured on a 12,275-transaction dataset:
+
+| Path | Cost |
+|---|---|
+| Cold — generate, persist, build | 1.63 s |
+| Warm — Redis working copy | 1.03 s |
+| Redis cleared — read from PostgreSQL | 1.23 s |
+
+Both tiers are optional downward: no Redis means reading Postgres each time, no
+Postgres means generating in memory. Neither absence stops the app, and
+`/api/health` reports which tiers are live.
+
+Point elsewhere with `MULETRACE_POSTGRES_URL`; the application database is
+created on first use. Install on Windows from an **elevated** terminal:
+
+```powershell
+winget install --id PostgreSQL.PostgreSQL.17 --accept-package-agreements --accept-source-agreements
+```
+
+`GET /api/datasets` lists what Postgres is holding.
+
 ## Store
 
 `backend/store.py` wraps Redis and holds three things:

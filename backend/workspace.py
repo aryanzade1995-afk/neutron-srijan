@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from db import DB
 from feedback import FeedbackStore
 from generate_data import Generator
 from graph_engine import TransactionGraph, WalkParams
@@ -189,14 +190,21 @@ def _deserialise(blob: bytes, count: int) -> list[pd.DataFrame]:
 
 
 def load_dataset(seed: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
-    """Generated once, then served from the store.
+    """PostgreSQL -> Redis -> graph.
 
-    Regeneration is deterministic so caching changes nothing about what a seed
-    produces - it just removes the work when a dataset is revisited.
+    Postgres is the system of record. Redis holds a serialised working copy so a
+    revisited dataset costs a deserialise rather than a SQL round trip, and the
+    generator only runs for a seed nobody has produced yet - at which point the
+    result is written back to Postgres so it is durable from then on.
+
+    Every tier is optional in the downward direction: no Redis means read from
+    Postgres each time, no Postgres means generate in memory. Neither absence
+    stops the app, and /api/health reports which tiers are live.
     """
     params = dataset_params(seed)
     key = keys_for(seed)["dataset"]
 
+    # 1. Redis working copy
     blob = STORE.get(key)
     if blob:
         try:
@@ -205,10 +213,20 @@ def load_dataset(seed: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, d
         except Exception:
             STORE.delete(key)          # unreadable cache entry must not be fatal
 
+    # 2. PostgreSQL, the system of record
+    loaded = DB.load(seed)
+    if loaded is not None:
+        txns, accounts, truth = loaded
+        STORE.set(key, _serialise((txns, accounts, truth)), ttl=DATASET_TTL)
+        return txns, accounts, truth, params
+
+    # 3. Nobody has this seed yet - generate it, then persist so it is durable
     generator = Generator(seed=seed)
     txns, accounts, truth = generator.run(
         params["n_normal"], params["n_merchants"], params["n_txns"],
         params["n_chains"], params["n_forwarders"])
+
+    DB.save(seed, f"DS-{seed % 100000:05d}", txns, accounts, truth, params)
     STORE.set(key, _serialise((txns, accounts, truth)), ttl=DATASET_TTL)
     return txns, accounts, truth, params
 
