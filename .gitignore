@@ -23,3 +23,8 @@ Thumbs.db
 data/*.jsonl
 .pytest_cache/
 data/feedback/
+
+# Local Netlify folder
+.netlify
+data/users.json
+data/users.tmp

@@ -165,15 +165,35 @@ recommendations — so it supports password + TOTP (RFC 6238) multi-factor sign-
 enforced by one middleware in front of every data route rather than per-route
 checks.
 
-**It ships off**, so a demo cannot hit a login wall because the server was
-started a different way:
+**It is on by default.** To run the console open for a rehearsal:
 
 ```bash
-MULETRACE_AUTH=on .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
+MULETRACE_AUTH=off .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
 ```
 
-With it on, the server prints a username, password and TOTP key once on first
-boot. `/login` walks two steps — credentials, then the six-digit code — and shows
+### Accounts
+
+There is no external identity provider — password and TOTP are both verified
+locally, and any authenticator app works (Google Authenticator, Authy, Microsoft
+Authenticator, 1Password).
+
+Accounts persist to `data/users.json` (gitignored), because a TOTP secret that
+regenerated on every restart would mean re-enrolling your phone each boot. Only
+sessions, challenges and the failure counter are ephemeral — those live in the
+store and losing them just means signing in again.
+
+On first boot with no account, the server creates one and prints the username,
+password and TOTP key **once**. To set them yourself:
+
+```bash
+MULETRACE_USER=investigator MULETRACE_PASSWORD='your-password' .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
+```
+
+To add or reset an account:
+
+```bash
+.venv/Scripts/python.exe -c "import sys; sys.path.insert(0,'backend'); import auth; r=auth.create_user('investigator','your-password'); print(auth.provisioning_uri('investigator', r['totp_secret']))"
+``` `/login` walks two steps — credentials, then the six-digit code — and shows
 a QR for enrolment. The first factor only issues a 180-second challenge; only the
 second mints a session. Challenges are single-use, failed attempts throttle at
 five per five minutes, and the enrolment secret is returned exactly once.

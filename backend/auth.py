@@ -7,11 +7,12 @@ reusable secret is not an adequate gate on that.
 TOTP is implemented on the standard library rather than pulled in as a
 dependency: it is an HMAC of a counter, and the whole of it is below.
 
-State lives in the store (Redis when available):
-  mt:auth:user:<username>       HASH   credentials and enrolment
-  mt:auth:session:<token>       STRING username, TTL = session lifetime
-  mt:auth:challenge:<token>     STRING username, short TTL, one login attempt
-  mt:auth:throttle:<username>   STRING failed attempt counter, TTL
+Accounts persist to data/users.json - see the note on USERS_FILE below. Everything
+else is ephemeral and lives in the store (Redis when available):
+
+  mt:auth:session:<token>     STRING username, TTL = session lifetime
+  mt:auth:challenge:<token>   STRING username, short TTL, one login attempt
+  mt:auth:throttle:<username> STRING failed attempt counter, TTL
 
 Set MULETRACE_AUTH=off to run the console open, for a rehearsal where handing a
 laptop round matters more than the gate.
@@ -25,13 +26,23 @@ import json
 import os
 import secrets
 import struct
+import threading
 import time
+from pathlib import Path
 
 from store import STORE
 
-# Off by default so a demo cannot hit a login wall because the server happened to
-# be started a different way. Turn it on explicitly with MULETRACE_AUTH=on.
-AUTH_ENABLED = os.environ.get("MULETRACE_AUTH", "off").lower() in ("on", "1", "true")
+AUTH_ENABLED = os.environ.get("MULETRACE_AUTH", "on").lower() not in ("off", "0", "false")
+
+# Accounts are the one piece of auth state that must outlive a restart. Sessions
+# and challenges are fine to lose - you sign in again. A TOTP secret is not: if
+# it were regenerated on every boot you would have to re-enrol your authenticator
+# each time, which makes the second factor unusable in practice. The in-process
+# store is empty on start and there is no Redis on this machine, so accounts are
+# written to disk and that file is the source of truth.
+USERS_FILE = Path(os.environ.get(
+    "MULETRACE_USERS_FILE",
+    Path(__file__).resolve().parent.parent / "data" / "users.json"))
 
 SESSION_TTL = int(os.environ.get("MULETRACE_SESSION_TTL", 60 * 60 * 8))   # one shift
 CHALLENGE_TTL = 180             # time to enter the code after the password
@@ -93,31 +104,58 @@ def check_password(password: str, stored_hash: str, salt_hex: str) -> bool:
 
 # ---------- users ----------
 
-def create_user(username: str, password: str, role: str = "investigator") -> dict:
-    pw_hash, salt = hash_password(password)
-    secret = new_totp_secret()
+_users_lock = threading.Lock()
+
+
+def _read_users() -> dict:
+    try:
+        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _write_users(users: dict) -> None:
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = USERS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(users, indent=2), encoding="utf-8")
+    tmp.replace(USERS_FILE)          # atomic, so a crash cannot leave it truncated
+
+
+def create_user(username: str, password: str, role: str = "investigator",
+                totp_secret: str | None = None) -> dict:
     record = {
         "username": username,
-        "password_hash": pw_hash,
-        "salt": salt,
-        "totp_secret": secret,
         "role": role,
         "mfa_enrolled": "0",
         "created_at": str(int(time.time())),
     }
-    STORE.hset(USER_KEY + username, {k: v.encode() for k, v in record.items()})
+    record["password_hash"], record["salt"] = hash_password(password)
+    record["totp_secret"] = totp_secret or new_totp_secret()
+
+    with _users_lock:
+        users = _read_users()
+        users[username] = record
+        _write_users(users)
     return record
 
 
 def get_user(username: str) -> dict | None:
-    raw = STORE.hgetall(USER_KEY + username)
-    if not raw:
-        return None
-    return {k: v.decode() if isinstance(v, bytes) else v for k, v in raw.items()}
+    return _read_users().get(username)
 
 
 def mark_enrolled(username: str) -> None:
-    STORE.hset(USER_KEY + username, {"mfa_enrolled": b"1"})
+    with _users_lock:
+        users = _read_users()
+        if username in users:
+            users[username]["mfa_enrolled"] = "1"
+            _write_users(users)
+
+
+def delete_user(username: str) -> None:
+    with _users_lock:
+        users = _read_users()
+        if users.pop(username, None) is not None:
+            _write_users(users)
 
 
 def ensure_demo_user() -> tuple[str, str, str] | None:
@@ -130,7 +168,8 @@ def ensure_demo_user() -> tuple[str, str, str] | None:
     if get_user(username):
         return None
     password = os.environ.get("MULETRACE_PASSWORD") or secrets.token_urlsafe(9)
-    record = create_user(username, password, role="investigator")
+    record = create_user(username, password, role="investigator",
+                         totp_secret=os.environ.get("MULETRACE_TOTP_SECRET"))
     return username, password, record["totp_secret"]
 
 

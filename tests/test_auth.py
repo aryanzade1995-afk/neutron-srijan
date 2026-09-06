@@ -26,11 +26,15 @@ def client(tmp_path_factory):
 
 
 @pytest.fixture
-def user():
+def user(tmp_path, monkeypatch):
+    # accounts persist to disk, so point the suite at a throwaway file rather
+    # than writing test users into the real one
+    monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "users.json")
     name = f"tester-{int(time.time() * 1000) % 1_000_000}"
     record = auth.create_user(name, "correct horse battery staple")
     yield name, "correct horse battery staple", record["totp_secret"]
-    store.STORE.delete(auth.USER_KEY + name, auth.THROTTLE_KEY + name)
+    auth.delete_user(name)
+    store.STORE.delete(auth.THROTTLE_KEY + name)
 
 
 def code_for(secret: str, drift: int = 0) -> str:
