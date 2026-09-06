@@ -105,6 +105,10 @@ class TransactionGraph:
     def txn(self, txn_id: str) -> dict | None:
         return self._by_id.get(txn_id)
 
+    def txns_since(self, cutoff: datetime) -> list[dict]:
+        """Every transaction at or after `cutoff` — the near-real-time window."""
+        return [e for e in self._by_id.values() if e["ts"] >= cutoff]
+
     def find_transactions(self, query: str, limit: int = 10) -> list[dict]:
         """Transactions whose id contains `query`, case-insensitively."""
         query = query.strip().lower()
@@ -270,8 +274,13 @@ class TransactionGraph:
 
     def scan(self, params: WalkParams | None = None, min_amount: float = 15000.0,
              min_hops: int = 3, limit: int = 40, lookback_days: float | None = None,
-             risk_lookup=None) -> list[dict]:
-        """Run the walk across the whole recent feed, before any complaint exists.
+             risk_lookup=None, monitored: set[str] | None = None) -> list[dict]:
+        """Run the walk across the recent feed, before any complaint exists.
+
+        `monitored` restricts the seeds to transactions touching an account the
+        rule engine flagged. Tracing every transaction on a national rail is not
+        a plan; the rules narrow the field and this walks what is left. Passing
+        None keeps the old behaviour of seeding from every material transfer.
 
         Returns maximal chains only - a chain and its own tail are the same money,
         so the suffix is dropped rather than shown twice.
@@ -282,7 +291,11 @@ class TransactionGraph:
         seeds = [e for e in self._by_id.values()
                  if e["amount"] >= min_amount
                  and e["mode"] == "P2P"
-                 and (cutoff is None or e["ts"] >= cutoff)]
+                 and (cutoff is None or e["ts"] >= cutoff)
+                 # either end being monitored is enough: a mule is often the
+                 # beneficiary of the suspicious leg, not the sender
+                 and (monitored is None
+                      or e["sender"] in monitored or e["receiver"] in monitored)]
         seeds.sort(key=lambda e: -e["amount"])
 
         found: list[dict] = []

@@ -281,6 +281,8 @@ def overview(request: Request, response: Response) -> dict:
         "mule_accounts_known": int(ws.features["is_mule"].sum()),
         "injected_chains": int(len(ws.truth)),
         "review": ws.feedback.summary(),
+        "rules": ws.rule_summary,
+        "accounts_monitored": ws.rule_summary.get("accounts_monitored", 0),
         "model": ws.report.as_dict(),
         "baseline": ws.model.baseline_report,
     }
@@ -318,6 +320,39 @@ def new_dataset(response: Response) -> dict:
         "transactions": int(len(ws.graph.txns)),
         "accounts": int(len(ws.graph.accounts)),
     }
+
+
+@app.get("/api/rules")
+def rules_view(request: Request, response: Response,
+               limit: int = 50, monitored_only: bool = False) -> dict:
+    """What the rule engine decided, and why.
+
+    This is the gate in front of chain tracing: only accounts listed here as
+    monitored have their transactions seeded into the walk.
+    """
+    ws = resolve_workspace(request, response)
+    alerts = ws.alerts
+    if monitored_only:
+        alerts = [a for a in alerts if a.monitored]
+    return {
+        "dataset": ws.label,
+        "summary": ws.rule_summary,
+        "count": len(alerts),
+        "alerts": [a.as_dict() for a in alerts[:limit]],
+    }
+
+
+@app.get("/api/rules/{account_id}")
+def rules_for_account(account_id: str, request: Request, response: Response) -> dict:
+    ws = resolve_workspace(request, response)
+    for alert in ws.alerts:
+        if alert.account == account_id:
+            return alert.as_dict()
+    if account_id not in ws.features.index:
+        raise HTTPException(404, f"account {account_id} not found")
+    return {"account": account_id, "score": 0.0, "monitored": False,
+            "rules": [], "triggers": [],
+            "detail": "no rule fired for this account in the current window"}
 
 
 @app.get("/api/evaluation")

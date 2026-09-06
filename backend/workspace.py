@@ -26,6 +26,7 @@ from feedback import FeedbackStore
 from generate_data import Generator
 from graph_engine import TransactionGraph, WalkParams
 from risk_model import RiskModel, build_features
+from rules import RuleEngine
 from store import STORE, keys_for
 
 MAX_WORKSPACES = 12
@@ -66,18 +67,30 @@ class Workspace:
     chains: list = field(default_factory=list)
     evaluation: dict | None = None
     feedback: FeedbackStore | None = None
+    alerts: list = field(default_factory=list)      # rule-engine output
+    monitored: set = field(default_factory=set)     # accounts worth tracing
+    rule_summary: dict = field(default_factory=dict)
 
     @property
     def label(self) -> str:
         """Short human-facing id, so two people can tell they are on different data."""
         return f"DS-{self.seed % 100000:05d}"
 
+    def run_rules(self) -> list:
+        """Decide which accounts are worth watching before anything is traced."""
+        engine = RuleEngine(self.graph)
+        self.monitored, self.alerts = engine.monitored_accounts(self.model.score)
+        self.rule_summary = engine.summary(self.alerts)
+        return self.alerts
+
     def rescan(self, decorate) -> list:
-        # High cap on purpose: the count has to reflect what was actually
-        # detected. A low cap made every dataset report the same total and read
-        # as a hardcoded number.
+        # The rule engine gates the scan: only transactions touching a monitored
+        # account are seeded. High cap on purpose - the count has to reflect what
+        # was actually detected, not a display limit.
+        self.run_rules()
         chains = self.graph.scan(WalkParams(), min_hops=3, limit=500,
-                                 risk_lookup=self.model.score)
+                                 risk_lookup=self.model.score,
+                                 monitored=self.monitored)
         self.chains = [decorate(self, c) for c in chains]
         self.evaluation = None
         self.publish_patterns()
