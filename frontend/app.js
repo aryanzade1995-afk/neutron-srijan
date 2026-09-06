@@ -891,5 +891,21 @@ document.addEventListener('keydown', e => {
 });
 
 boot().catch(err => {
-  $('loading').innerHTML = `<p style="color:#bf5f66">Could not reach the API — ${err.message}</p>`;
+  /* On a static host there is no API behind the console. Say what is missing and
+     where the working demo is, rather than showing a bare fetch error. */
+  const staticHost = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  $('loading').innerHTML = staticHost
+    ? `<div style="max-width:460px;text-align:center;line-height:1.6">
+         <p style="color:var(--amber);font-weight:700;margin:0 0 10px">
+           No detection backend is connected</p>
+         <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">
+           The console traces chains against a live FastAPI service. This host
+           serves the interface only, so there is nothing to query yet.</p>
+         <p style="color:var(--muted-2);font-size:11.5px;margin:0 0 18px">
+           Point <code>/api/*</code> at a deployed backend in
+           <code>netlify.toml</code>, or run it locally:<br>
+           <code>uvicorn app:app --app-dir backend</code></p>
+         <a class="btn btn-primary" href="/">Back to the overview</a>
+       </div>`
+    : `<p style="color:#bf5f66">Could not reach the API — ${err.message}</p>`;
 });

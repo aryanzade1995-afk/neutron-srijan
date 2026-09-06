@@ -26,8 +26,13 @@ import threading
 import time
 from typing import Iterable
 
-REDIS_URL = os.environ.get("MULETRACE_REDIS_URL", "redis://127.0.0.1:6379/0")
-CONNECT_TIMEOUT = float(os.environ.get("MULETRACE_REDIS_TIMEOUT", "0.4"))
+import config
+
+# A local Redis carries no credential, so a localhost default is harmless and
+# keeps the common case working with no setup. Anything authenticated belongs in
+# .env or the environment, never here.
+REDIS_URL = config.get("MULETRACE_REDIS_URL", "redis://127.0.0.1:6379/0")
+CONNECT_TIMEOUT = float(config.get("MULETRACE_REDIS_TIMEOUT", "0.4"))
 
 
 class MemoryStore:

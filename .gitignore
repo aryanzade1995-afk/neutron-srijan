@@ -28,3 +28,4 @@ data/feedback/
 .netlify
 data/users.json
 data/users.tmp
+.env

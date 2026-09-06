@@ -26,23 +26,29 @@ a demo when it is not.
 """
 from __future__ import annotations
 
-import os
-from datetime import timezone
 import sys
+from datetime import timezone
 from typing import Iterable
 
 import pandas as pd
 
-POSTGRES_URL = os.environ.get(
-    "MULETRACE_POSTGRES_URL",
-    "postgresql://postgres:postgres@127.0.0.1:5432/muletrace")
+import config
 
-# the database the app owns; created on first use if it is missing
-ADMIN_URL = os.environ.get(
-    "MULETRACE_POSTGRES_ADMIN_URL",
-    "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
+# No default. A connection string carries a credential, and shipping
+# "postgres:postgres@localhost" in source is a real password on someone's machine
+# plus an instruction to everyone who clones the repo to reuse it. Unset means
+# Postgres is simply off, which is a supported state.
+#
+#   MULETRACE_POSTGRES_URL=postgresql://user:pass@host:5432/muletrace
+#
+# Put it in .env at the repo root (gitignored) or export it.
+POSTGRES_URL = config.get("MULETRACE_POSTGRES_URL")
 
-CONNECT_TIMEOUT = float(os.environ.get("MULETRACE_POSTGRES_TIMEOUT", "3"))
+# Optional. Only needed to CREATE the application database on first run; without
+# it the database is expected to exist already.
+ADMIN_URL = config.get("MULETRACE_POSTGRES_ADMIN_URL")
+
+CONNECT_TIMEOUT = float(config.get("MULETRACE_POSTGRES_TIMEOUT", "3"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS datasets (
@@ -105,11 +111,14 @@ CREATE TABLE IF NOT EXISTS ground_truth (
 class Postgres:
     """Thin wrapper. Absent server is a supported state, not an error."""
 
-    def __init__(self, url: str = POSTGRES_URL) -> None:
-        self.url = url
+    def __init__(self, url: str | None = None) -> None:
+        self.url = url if url is not None else POSTGRES_URL
         self.available = False
         self.version: str | None = None
         self._connect_error: str | None = None
+        if not self.url:
+            self._connect_error = "MULETRACE_POSTGRES_URL is not set"
+            return
         self._prepare()
 
     # ---- connection ----
@@ -134,7 +143,12 @@ class Postgres:
                   f"datasets will be generated in memory instead.", file=sys.stderr)
 
     def _ensure_database(self, psycopg) -> None:
-        """Create the application database if the server has not got it yet."""
+        """Create the application database if the server has not got it yet.
+
+        Needs an admin URL; without one the database is assumed to exist.
+        """
+        if not ADMIN_URL:
+            return
         name = self.url.rsplit("/", 1)[-1]
         with psycopg.connect(ADMIN_URL, connect_timeout=CONNECT_TIMEOUT,
                              autocommit=True) as conn:
@@ -280,7 +294,8 @@ class Postgres:
 
     def info(self) -> dict:
         if not self.available:
-            return {"available": False, "reason": self._connect_error, "url": self.url}
+            return {"available": False, "reason": self._connect_error,
+                    "configured": bool(self.url)}
         with self._conn() as conn:
             datasets = conn.execute("SELECT count(*) FROM datasets").fetchone()[0]
             txns = conn.execute("SELECT count(*) FROM transactions").fetchone()[0]

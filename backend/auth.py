@@ -30,9 +30,10 @@ import threading
 import time
 from pathlib import Path
 
+import config
 from store import STORE
 
-AUTH_ENABLED = os.environ.get("MULETRACE_AUTH", "on").lower() not in ("off", "0", "false")
+AUTH_ENABLED = (config.get("MULETRACE_AUTH", "on") or "on").lower() not in ("off", "0", "false")
 
 # Accounts are the one piece of auth state that must outlive a restart. Sessions
 # and challenges are fine to lose - you sign in again. A TOTP secret is not: if
