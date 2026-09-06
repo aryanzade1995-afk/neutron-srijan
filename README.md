@@ -189,6 +189,36 @@ password and TOTP key **once**. To set them yourself:
 MULETRACE_USER=investigator MULETRACE_PASSWORD='your-password' .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
 ```
 
+### Getting the one-time code
+
+The second factor comes from any authenticator app — Google Authenticator,
+Microsoft Authenticator, Authy, 1Password. Two ways to enrol:
+
+- **Scan the QR.** `/login` shows one on the first sign-in for an account that
+  has not enrolled yet. It is shown once, so if that sign-in has already
+  happened, re-arm it:
+
+  ```bash
+  .venv/Scripts/python.exe scripts/otp.py --reset-enrolment
+  ```
+
+- **Enter the key by hand.** Print the secret and `otpauth://` URI:
+
+  ```bash
+  .venv/Scripts/python.exe scripts/otp.py --enrol
+  ```
+
+Without a phone — for scripted testing, or a demo where holding a phone to a
+projector is awkward — print the current code directly:
+
+```bash
+.venv/Scripts/python.exe scripts/otp.py --watch
+```
+
+That reads the shared secret from `data/users.json`, so anyone who can run it
+can sign in. It is a local development convenience, not something to point at a
+real deployment.
+
 To add or reset an account:
 
 ```bash
