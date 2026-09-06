@@ -35,7 +35,10 @@ it will be picked up, or create a Web Service manually with:
 - **Build:** `pip install -r requirements.txt`
 - **Start:** `uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT`
 - **Health check:** `/api/health`
-- **Env:** `MULETRACE_AUTH=off` (set `on` to require password + TOTP)
+- **Env:** `MULETRACE_AUTH=on` — password + TOTP. `MULETRACE_POSTGRES_URL`
+  must be the database's **External** URL: the free tiers provision in Render's
+  default region regardless of `region:`, and internal `dpg-…` hostnames do not
+  resolve across regions.
 - **Optional:** `MULETRACE_REDIS_URL` pointing at a managed Redis, for durable
   sessions and shared dataset caching. Without it the in-process store is used
   and `/api/health` says so.
@@ -49,16 +52,16 @@ the cold start and a ~1.8 s workspace build. For a live demo, wake it first.
 
 ## 2. Frontend — Netlify
 
-`netlify.toml` is committed. **Before deploying, set the backend origin** —
-edit the `/api/*` redirect:
+`netlify.toml` is committed and already points at the live backend. Netlify
+hosts the landing page only; `/console` and `/login` 302 to the Render service,
+which serves the console and the API from one origin so the session cookie
+works. There is no `/api/*` proxy, and `frontend/console.html` stays as an
+unlinked read-only snapshot.
 
-```toml
-[[redirects]]
-  from = "/api/*"
-  to = "https://YOUR-BACKEND.onrender.com/api/:splat"
-  status = 200
-  force = true
-```
+If the backend hostname ever changes, update it in three places:
+
+- `netlify.toml` — the `/console` and `/login` redirects
+- `frontend/index.html` — the three "Open Investigation Console" links
 
 Then, from the repo root:
 

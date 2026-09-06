@@ -19,26 +19,21 @@
   NODE_VERSION = "20"
 
 # ---- API proxy -------------------------------------------------------------
-# DISABLED until a backend of yours exists.
+# Deliberately still disabled, even though the backend now exists.
 #
-# This previously pointed at a guessed hostname, muletrace-api.onrender.com,
-# which turned out to be a live service belonging to somebody else. Every
-# /api/* request from this site - including any sign-in POST - was being
-# forwarded to a third party. Never point a proxy at a host you have not
-# deployed and confirmed is yours.
+# The console authenticates with a session cookie that the FastAPI page routes
+# issue when they serve /console. Proxying only /api/* would mean Netlify serves
+# a static console.html that never received that cookie, so every call behind it
+# would 401. Proxying the pages too would just be a slower way of being the
+# backend.
 #
-# Deploy the backend (see render.yaml), confirm the URL answers with OUR
-# /api/health payload - it carries "dataset", "store" and "database" keys, not a
-# bare {"status":"ok"} - then uncomment this with that hostname and redeploy.
+# Instead the console links below send the browser to the backend itself, which
+# serves the page and the API from one origin. One console, one dataset, no
+# split brain.
 #
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://YOUR-SERVICE.onrender.com/api/:splat"
-#   status = 200
-#   force = true
-#
-# With no proxy, /api/* 404s and the console runs from demo.json in read-only
-# mode, which is the honest state: no backend, and it says so.
+# (A previous version of this file proxied /api/* to muletrace-api.onrender.com,
+# a guessed hostname that belonged to somebody else. Never point a proxy at a
+# host you have not deployed and confirmed is yours.)
 
 # ---- clean URLs ------------------------------------------------------------
 # The pages reference /assets/... because the FastAPI app mounts them there.
@@ -49,15 +44,22 @@
   to = "/:splat"
   status = 200
 
+# The console is not hosted here. It needs the Python backend for the graph
+# walk, the classifier and the session cookie, so send the browser there rather
+# than serving the read-only snapshot and letting it contradict the live one.
+# 302, not 301: the backend hostname is not permanent and a cached 301 would
+# outlive it in every visitor's browser.
 [[redirects]]
   from = "/console"
-  to = "/console.html"
-  status = 200
+  to = "https://muletrace-api-rybn.onrender.com/console"
+  status = 302
+  force = true
 
 [[redirects]]
   from = "/login"
-  to = "/login.html"
-  status = 200
+  to = "https://muletrace-api-rybn.onrender.com/login"
+  status = 302
+  force = true
 
 # ---- headers ---------------------------------------------------------------
 [[headers]]
