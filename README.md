@@ -189,6 +189,15 @@ password and TOTP key **once**. To set them yourself:
 MULETRACE_USER=investigator MULETRACE_PASSWORD='your-password' .venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --port 8000
 ```
 
+> **Windows note.** Examples here use `&&` to chain commands, which Git Bash
+> accepts but **Windows PowerShell 5.1 rejects** with `The token '&&' is not a
+> valid statement separator`. In PowerShell either run the two parts on separate
+> lines, or use the full path in one command:
+>
+> ```
+> C:/Users/aryan/Documents/projects/neutron-srijan/.venv/Scripts/python.exe scripts/otp.py
+> ```
+
 ### Getting the one-time code
 
 The second factor comes from any authenticator app — Google Authenticator,

@@ -5,11 +5,12 @@ is for the cases where that is not practical: signing in on a machine with no
 phone to hand, scripted testing, or a demo where you would rather not hold a
 phone up to a projector.
 
-    python scripts/otp.py                  current code and seconds remaining
-    python scripts/otp.py --watch          keep printing as it rolls over
-    python scripts/otp.py --enrol          secret + otpauth URI for manual entry
+    python scripts/otp.py                    current code and seconds remaining
+    python scripts/otp.py --watch            keep printing as it rolls over
+    python scripts/otp.py --enrol            secret + otpauth URI for this account
+    python scripts/otp.py --new-secret       generate a fresh secret (for deploys)
     python scripts/otp.py --reset-enrolment  make /login show the QR again
-    python scripts/otp.py --user someone   pick a different account
+    python scripts/otp.py --user someone     pick a different account
 
 Anyone who can run this can sign in, because it reads the shared secret from
 data/users.json. That is the same trust level as the file itself - keep both off
@@ -41,7 +42,20 @@ def main() -> int:
     ap.add_argument("--enrol", action="store_true", help="show the secret and otpauth URI")
     ap.add_argument("--reset-enrolment", action="store_true",
                     help="mark the account un-enrolled so /login shows the QR again")
+    ap.add_argument("--new-secret", action="store_true",
+                    help="generate a fresh secret to pin in a deployment")
     args = ap.parse_args()
+
+    if args.new_secret:
+        # Deliberately does not touch any existing account: this is for pinning
+        # MULETRACE_TOTP_SECRET on a host with an ephemeral filesystem.
+        secret = auth.new_totp_secret()
+        print(f"MULETRACE_TOTP_SECRET={secret}")
+        print()
+        print(f"otpauth URI : {auth.provisioning_uri(args.user, secret)}")
+        print("Add that to your authenticator, and set the variable on the host")
+        print("alongside MULETRACE_USER and MULETRACE_PASSWORD.")
+        return 0
 
     user = auth.get_user(args.user)
     if not user:
