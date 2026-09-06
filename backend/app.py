@@ -240,15 +240,18 @@ def _decorate(ws: Workspace, trace: dict) -> dict:
 # ---------- endpoints ----------
 
 @app.get("/api/health")
-def health(request: Request, response: Response) -> dict:
-    ws = resolve_workspace(request, response)
+def health() -> dict:
+    """Liveness only. Deliberately does no work.
+
+    This used to resolve the caller's workspace, which generates a dataset, fits
+    a model and runs a scan - about 2.5s on a developer machine and far longer on
+    a small instance. A platform health check that expensive fails, gets retried,
+    and takes the deploy down with it. That is exactly what happened on Render.
+
+    Anything that needs a workspace belongs on /api/overview.
+    """
     return {
         "status": "ok",
-        "dataset": ws.label,
-        "seed": ws.seed,
-        "transactions": int(len(ws.graph.txns)),
-        "accounts": int(len(ws.graph.accounts)),
-        "chains": len(ws.chains),
         "pool": POOL.stats(),
         "store": STORE.info(),
         "database": DB.info(),

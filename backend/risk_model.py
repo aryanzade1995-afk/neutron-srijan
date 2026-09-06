@@ -20,6 +20,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+import config
+
+# 300 trees is right on a laptop; a 0.1-CPU instance needs far fewer to answer a
+# request in reasonable time. Accuracy drops a little, which is the honest trade
+# for running at all on a small host.
+FOREST_TREES = int(config.get("MULETRACE_FOREST_TREES", "300"))
+
 FEATURES = [
     "in_count", "out_count", "total_in", "total_out", "forward_ratio",
     "median_response_min", "min_response_min", "max_forward_pct", "fast_forward_hops",
@@ -153,7 +160,7 @@ class RiskModel:
 
         forest = Pipeline([("scale", StandardScaler()),
                            ("clf", RandomForestClassifier(
-                               n_estimators=300, min_samples_leaf=2,
+                               n_estimators=FOREST_TREES, min_samples_leaf=2,
                                class_weight="balanced_subsample", random_state=seed, n_jobs=-1))])
         logistic = Pipeline([("scale", StandardScaler()),
                              ("clf", LogisticRegression(max_iter=2000, class_weight="balanced"))])
@@ -171,7 +178,7 @@ class RiskModel:
         top = sorted(zip(FEATURES, importances), key=lambda kv: -kv[1])[:8]
 
         self.report = ModelReport(
-            algorithm="RandomForestClassifier(300)",
+            algorithm=f"RandomForestClassifier({FOREST_TREES})",
             n_accounts=int(len(features)),
             n_mules=int(y.sum()),
             precision=round(float(precision), 4),

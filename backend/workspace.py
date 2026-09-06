@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import config
 from db import DB
 from feedback import FeedbackStore
 from generate_data import Generator
@@ -40,6 +41,11 @@ PATTERN_TTL = 60 * 60 * 6
 TRACE_TTL = 60 * 30
 
 
+# A small instance cannot build a 22k-transaction network per session in
+# reasonable time. Capping keeps the shape of the demo while fitting the host.
+MAX_TXNS = int(config.get("MULETRACE_MAX_TXNS", "22000"))
+
+
 def dataset_params(seed: int) -> dict:
     """Scale as well as content varies with the seed.
 
@@ -47,12 +53,14 @@ def dataset_params(seed: int) -> dict:
     totals on the dashboard and it would look canned.
     """
     rng = random.Random(seed)
+    txns = rng.randint(9_000, 22_000)
+    scale = min(1.0, MAX_TXNS / txns)
     return {
-        "n_normal": rng.randint(700, 1400),
-        "n_merchants": rng.randint(90, 170),
-        "n_txns": rng.randint(9_000, 22_000),
-        "n_chains": rng.randint(28, 70),
-        "n_forwarders": rng.randint(25, 55),
+        "n_normal": max(200, int(rng.randint(700, 1400) * scale)),
+        "n_merchants": max(40, int(rng.randint(90, 170) * scale)),
+        "n_txns": min(txns, MAX_TXNS),
+        "n_chains": max(12, int(rng.randint(28, 70) * scale)),
+        "n_forwarders": max(10, int(rng.randint(25, 55) * scale)),
     }
 
 

@@ -40,11 +40,25 @@ def client(tmp_path_factory):
         yield test_client
 
 
-def test_health(client):
+def test_health_is_cheap_and_builds_nothing(client):
+    """A platform health check must not build a workspace.
+
+    It used to, which meant ~2.5s of dataset generation and model fitting per
+    probe. On a small instance that overruns the check, the deploy is marked
+    unhealthy and killed - which is exactly what happened on Render. Guard the
+    property, not just the payload.
+    """
+    import time
+    start = time.perf_counter()
     body = client.get("/api/health").json()
+    elapsed = time.perf_counter() - start
+
     assert body["status"] == "ok"
-    assert body["transactions"] > 0
-    assert body["seed"] == SEED
+    assert "store" in body and "database" in body
+    assert "auth_enabled" in body
+    # nothing dataset-shaped: those need a workspace
+    assert "transactions" not in body and "seed" not in body
+    assert elapsed < 1.0, f"health took {elapsed:.2f}s — it must not build anything"
 
 
 def test_overview_reports_totals_and_model(client):

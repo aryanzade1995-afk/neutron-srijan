@@ -13,9 +13,14 @@
 #     pays a cold start plus a workspace build. Wake it before presenting.
 #   * free Postgres expires after 30 days.
 
+# Region must match across ALL services. Render's internal hostnames
+# (dpg-..., red-...) only resolve inside one region, and a first deploy with the
+# web service in singapore and these defaulting elsewhere fails DNS with
+# "Name or service not known" - which is exactly what happened.
 databases:
   - name: muletrace-db
     plan: free
+    region: singapore
     databaseName: muletrace
     user: muletrace
 
@@ -26,6 +31,7 @@ services:
   - type: redis
     name: muletrace-cache
     plan: free
+    region: singapore
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []          # reachable only from inside the Render network
 
@@ -73,3 +79,11 @@ services:
       # How much of the feed the rule engine treats as "now", in hours.
       - key: MULETRACE_RULE_WINDOW_HOURS
         value: "168"
+
+      # Free tier is 0.1 CPU and 512 MB. The defaults (up to 22k transactions,
+      # a 300-tree forest) are sized for a laptop and will crawl or run out of
+      # memory here. These keep a first request to a few seconds.
+      - key: MULETRACE_MAX_TXNS
+        value: "6000"
+      - key: MULETRACE_FOREST_TREES
+        value: "120"
