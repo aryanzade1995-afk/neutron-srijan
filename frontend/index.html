@@ -293,8 +293,22 @@
   const seed = new URLSearchParams(location.search).get('seed');
   const api = (p) => seed ? `${p}?seed=${encodeURIComponent(seed)}` : p;
 
+  /* On a static host there may be no API behind this page. Fall back to the
+     snapshot in metrics.json, which is real measured output from the reference
+     dataset rather than placeholder text, so the page never shows dashes. */
+  let snapshot = null;
+  const fallback = async (part) => {
+    if (snapshot === null) {
+      snapshot = await fetch('/metrics.json').then(r => r.json()).catch(() => false);
+    }
+    if (!snapshot) throw new Error('no snapshot');
+    return snapshot[part];
+  };
+
   try {
-    const o = await fetch(api('/api/overview')).then(r => r.json());
+    const o = await fetch(api('/api/overview'))
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+      .catch(() => fallback('overview'));
     set('transactions', o.transactions.toLocaleString('en-IN'));
     set('accounts', o.accounts.toLocaleString('en-IN'));
     set('active-chains', o.active_chains);
@@ -317,7 +331,9 @@
   }
 
   try {
-    const ev = await fetch(api('/api/evaluation')).then(r => r.json());
+    const ev = await fetch(api('/api/evaluation'))
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+      .catch(() => fallback('evaluation'));
     set('end-node-accuracy', pct(ev.chain_walk.end_node_accuracy));
     set('scan-recall', pct(ev.proactive_scan.recall_vs_injected));
     set('injected-chains', ev.dataset.injected_chains);

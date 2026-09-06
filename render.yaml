@@ -1,0 +1,24 @@
+# Backend host for MuleTrace.
+#
+# Netlify serves the frontend and proxies /api/* here (see netlify.toml).
+# This app needs a real Python process: it holds a networkx graph and a fitted
+# scikit-learn model in an in-process LRU pool, and standing up one workspace
+# costs about 1.8s of CPU - neither fits a stateless function.
+services:
+  - type: web
+    name: muletrace-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # authentication ships off; set to "on" to require password + TOTP
+      - key: MULETRACE_AUTH
+        value: "off"
+      # optional: point at a managed Redis for durable sessions and shared
+      # dataset caching. Without it the in-process store is used.
+      - key: MULETRACE_REDIS_URL
+        sync: false

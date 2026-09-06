@@ -1,0 +1,68 @@
+# Netlify hosts the frontend. The FastAPI backend cannot run here - Netlify
+# Functions support JavaScript/TypeScript and Go, not Python, and the app holds
+# live graph and fitted-model objects in an in-process LRU pool that a stateless
+# function could not keep between requests.
+#
+# So: static assets are served from Netlify, and /api/* is proxied to a Python
+# host (Render, Railway, Fly). Set BACKEND_ORIGIN below and redeploy.
+#
+# Without a backend the landing page still works - it falls back to the measured
+# snapshot in frontend/metrics.json. The console needs the API.
+
+[build]
+  publish = "frontend"
+  # metrics.json is generated locally by scripts/build_metrics.py and committed,
+  # so Netlify needs no Python toolchain at build time
+  command = ""
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# ---- API proxy -------------------------------------------------------------
+# Replace the host below with your deployed backend, then redeploy.
+# Until then these return 404 and the console will say the API is unreachable.
+[[redirects]]
+  from = "/api/*"
+  to = "https://muletrace-api.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# ---- clean URLs ------------------------------------------------------------
+# The pages reference /assets/... because the FastAPI app mounts them there.
+# On Netlify the same files sit at the publish root, so map it rather than
+# rewriting every href.
+[[redirects]]
+  from = "/assets/*"
+  to = "/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/console"
+  to = "/console.html"
+  status = 200
+
+[[redirects]]
+  from = "/login"
+  to = "/login.html"
+  status = 200
+
+# ---- headers ---------------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# The pages must reach the server on reload so a new dataset is issued, and the
+# snapshot must not be served stale after a redeploy.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-store, must-revalidate"
+
+[[headers]]
+  for = "/metrics.json"
+  [headers.values]
+    Cache-Control = "no-cache"

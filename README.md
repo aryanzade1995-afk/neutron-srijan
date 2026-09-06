@@ -2,7 +2,7 @@
 
 **MuleTrace** — mule-account transaction chain detection for UPI/NPCI.
 
-*Team Neutron · Srijan 26 (GH Raisoni College) · Fraud Detection domain*
+*Transaction chain intelligence for the interbank rail*
 
 ---
 
