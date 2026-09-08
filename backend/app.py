@@ -330,7 +330,7 @@ def new_dataset(response: Response) -> dict:
 @app.get("/api/datasets")
 def datasets() -> dict:
     """What PostgreSQL is holding — the system of record for every dataset."""
-    return {"database": DB.info(), "datasets": DB.catalogue()}
+    return {"database": DB.info(exact=True), "datasets": DB.catalogue()}
 
 
 @app.get("/api/rules")

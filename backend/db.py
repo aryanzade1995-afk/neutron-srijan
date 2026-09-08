@@ -292,17 +292,41 @@ class Postgres:
                  "accounts": r[3], "chains": r[4], "created_at": r[5].isoformat()}
                 for r in rows]
 
-    def info(self) -> dict:
+    def info(self, exact: bool = False) -> dict:
+        """Tier status. Cheap by default, because /api/health calls it.
+
+        An exact `count(*)` over transactions is a sequential scan: it costs
+        nothing on an empty database and roughly two seconds by the time the
+        table holds a million rows. Putting that on the health endpoint means
+        the probe gets slower the longer the service runs, until the platform
+        times it out and kills a working deploy - the same failure that took
+        down the first Render deploy by a different route.
+
+        So the default reads the planner's row estimate from pg_class instead,
+        which is a catalogue lookup and does not touch the table. It is
+        approximate, and is named so nobody quotes it as a count. Pass
+        exact=True where the true number is worth the scan.
+        """
         if not self.available:
             return {"available": False, "reason": self._connect_error,
                     "configured": bool(self.url)}
         with self._conn() as conn:
+            # small table, and the row count is the point of it
             datasets = conn.execute("SELECT count(*) FROM datasets").fetchone()[0]
-            txns = conn.execute("SELECT count(*) FROM transactions").fetchone()[0]
+            if exact:
+                txns = {"transactions":
+                        conn.execute("SELECT count(*) FROM transactions").fetchone()[0]}
+            else:
+                estimate = conn.execute(
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = 'transactions'"
+                ).fetchone()
+                # reltuples is -1 until the table has been analysed at least once
+                value = int(estimate[0]) if estimate and estimate[0] >= 0 else None
+                txns = {"transactions_estimate": value}
             size = conn.execute(
                 "SELECT pg_size_pretty(pg_database_size(current_database()))").fetchone()[0]
         return {"available": True, "version": self.version, "datasets": datasets,
-                "transactions": txns, "size": size, "url": self.url.rsplit("@", 1)[-1]}
+                **txns, "size": size, "url": self.url.rsplit("@", 1)[-1]}
 
 
 DB = Postgres()

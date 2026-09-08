@@ -133,3 +133,21 @@ def test_absent_server_is_a_supported_state():
     assert offline.save(1, "x", pd.DataFrame(), pd.DataFrame(), pd.DataFrame()) is False
     assert offline.catalogue() == []
     assert offline.info()["available"] is False
+
+
+def test_default_info_does_not_scan_the_transactions_table(database, saved):
+    """The health endpoint calls info(), so it must not count rows.
+
+    count(*) is a sequential scan. It is free on an empty database and costs
+    seconds once the table holds a million rows, which turns a liveness probe
+    into something a platform will eventually time out and kill. Guard the
+    shape - an estimate, never an exact count - rather than timing it, because
+    a timing assertion would be flaky on a loaded machine.
+    """
+    cheap = database.info()
+    assert "transactions_estimate" in cheap
+    assert "transactions" not in cheap
+
+    exact = database.info(exact=True)
+    assert isinstance(exact["transactions"], int)
+    assert "transactions_estimate" not in exact

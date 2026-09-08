@@ -29,3 +29,6 @@ data/feedback/
 data/users.json
 data/users.tmp
 .env
+
+# Claude Code local config
+.claude/
